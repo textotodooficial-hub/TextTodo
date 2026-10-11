@@ -24,13 +24,13 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24 # 🟢 Actualitzat a Node 24 per eliminar l'avís de GitHub
+          node-version: 24
 
       - name: Instalar dependencias
-        run: npm install
+        run: npm install --legacy-peer-deps # 🟢 Añadido para ignorar conflictos estrictos de paquetes
 
       - name: Compilar versión estática (dist)
-        run: npm run build || npx vite build # 🟢 Si falla per errors de TypeScript, intenta compilar directament amb Vite
+        run: npm run build || npx vite build
 
       - name: Crear 404.html y .nojekyll para GitHub Pages
         run: |
