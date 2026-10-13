@@ -5,8 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" id="dynamic-theme-color" content="#05070E" />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html {
+        background-color: #05070e;
+      }
+      html[data-theme="light"] {
+        background-color: #f6f8fc;
+      }
+    </style>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('textotodo-theme');
+          if (t === 'light') {
+            document.documentElement.setAttribute('data-theme', 'light');
+            document.documentElement.style.backgroundColor = '#f6f8fc';
+            var metaColor = document.getElementById('dynamic-theme-color');
+            if (metaColor) metaColor.setAttribute('content', '#f6f8fc');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
     <meta name="googlebot" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+    <meta name="google-site-verification" content="googlebb61da9a37e8d9e1" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta name="author" content="Rafael Moreno Roman" />
     <meta name="creator" content="Rafael Moreno Roman" />
@@ -23,13 +48,13 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="TextoTodo" />
 
-    <link rel="canonical" href="https://textotodo.pages.dev/" />
-    <link rel="alternate" hreflang="es" href="https://textotodo.pages.dev/" />
-    <link rel="alternate" hreflang="es-ES" href="https://textotodo.pages.dev/" />
-    <link rel="alternate" hreflang="es-MX" href="https://textotodo.pages.dev/" />
-    <link rel="alternate" hreflang="es-AR" href="https://textotodo.pages.dev/" />
-    <link rel="alternate" hreflang="es-CO" href="https://textotodo.pages.dev/" />
-    <link rel="alternate" hreflang="x-default" href="https://textotodo.pages.dev/" />
+    <link rel="canonical" href="https://textotodooficial-hub.github.io/TextTodo/" />
+    <link rel="alternate" hreflang="es" href="https://textotodooficial-hub.github.io/TextTodo/" />
+    <link rel="alternate" hreflang="es-ES" href="https://textotodooficial-hub.github.io/TextTodo/" />
+    <link rel="alternate" hreflang="es-MX" href="https://textotodooficial-hub.github.io/TextTodo/" />
+    <link rel="alternate" hreflang="es-AR" href="https://textotodooficial-hub.github.io/TextTodo/" />
+    <link rel="alternate" hreflang="es-CO" href="https://textotodooficial-hub.github.io/TextTodo/" />
+    <link rel="alternate" hreflang="x-default" href="https://textotodooficial-hub.github.io/TextTodo/" />
 
     <title>TextoTodo Pro — 10 Suites: Fuentes, Rimas, Diccionario y Citas APA</title>
     <meta
@@ -48,8 +73,9 @@
       property="og:description"
       content="Plataforma gratuita 10 en 1: 44 fuentes Unicode, diccionario de +15.000 palabras y rimas, resumidor, corrector, traductor, limpiador, citas APA 7 y diff."
     />
-    <meta property="og:url" content="https://textotodo.pages.dev/" />
-    <meta property="og:image" content="./og-banner.svg" />
+    <meta property="og:url" content="https://textotodooficial-hub.github.io/TextTodo/" />
+    <meta property="og:image" content="https://textotodooficial-hub.github.io/TextTodo/og-banner.png" />
+    <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta
@@ -64,15 +90,19 @@
       name="twitter:description"
       content="Plataforma gratuita 10 en 1: 44 fuentes Unicode, diccionario de +15.000 palabras y rimas, resumidor, corrector, traductor, limpiador, citas APA 7 y diff."
     />
-    <meta name="twitter:image" content="./og-banner.svg" />
+    <meta name="twitter:image" content="https://textotodooficial-hub.github.io/TextTodo/og-banner.png" />
     <meta
       name="twitter:image:alt"
       content="TextoTodo Pro — 10 herramientas profesionales de texto, estudio, diccionario, citas APA y composición"
     />
 
     <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" sizes="48x48" href="./favicon-48x48.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png" />
     <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-    <link rel="apple-touch-icon" href="./icon.svg" />
+    <link rel="shortcut icon" href="./favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -103,10 +133,10 @@
         "@graph": [
           {
             "@type": "WebSite",
-            "@id": "https://textotodo.pages.dev/#website",
+            "@id": "https://textotodooficial-hub.github.io/TextTodo/#website",
             "name": "TextoTodo",
             "alternateName": ["TextoTodo Pro", "Texto Todo 10 Suites de Texto"],
-            "url": "https://textotodo.pages.dev/",
+            "url": "https://textotodooficial-hub.github.io/TextTodo/",
             "inLanguage": "es",
             "description": "Plataforma gratuita 10 en 1: 44 fuentes Unicode, diccionario de +15.000 palabras y rimas, resumidor, corrector, traductor, limpiador, citas APA 7 y diff.",
             "publisher": {
@@ -117,9 +147,9 @@
           },
           {
             "@type": ["WebApplication", "SoftwareApplication"],
-            "@id": "https://textotodo.pages.dev/#application",
+            "@id": "https://textotodooficial-hub.github.io/TextTodo/#application",
             "name": "TextoTodo Pro — 10 Suites: Fuentes, Rimas, Diccionario y Citas APA",
-            "url": "https://textotodo.pages.dev/",
+            "url": "https://textotodooficial-hub.github.io/TextTodo/",
             "description": "Suite profesional gratuita 10 en 1 para cambiar fuentes Unicode (44 estilos y 14 marcos), traducir textos con voz, resumir apuntes y documentos en 6 formatos, corregir ortografía y redacción, limpiar formato sucio, analizar densidad SEO y SERP Google, convertir 20 formatos, buscar rimas y definiciones en +15.000 palabras del español, ejecutar Autopilot 5 en 1 y generar citas APA 7 o comparar versiones Diff.",
             "applicationCategory": "UtilitiesApplication",
             "applicationSubCategory": "Writing, Study, Dictionary & Text Processing Suite",
@@ -162,7 +192,7 @@
           },
           {
             "@type": "ItemList",
-            "@id": "https://textotodo.pages.dev/#tools-list",
+            "@id": "https://textotodooficial-hub.github.io/TextTodo/#tools-list",
             "name": "10 Suites de Texto Online Gratis en TextoTodo Pro",
             "itemListOrder": "https://schema.org/ItemListOrderAscending",
             "numberOfItems": 10,
@@ -172,76 +202,76 @@
                 "position": 1,
                 "name": "Conversor de Fuentes Unicode y Letras para Redes Sociales",
                 "description": "44 estilos de letras elegantes, negritas, cursivas y góticas con 14 marcos para copiar y pegar en Instagram, TikTok, WhatsApp y LinkedIn.",
-                "url": "https://textotodo.pages.dev/#fuente"
+                "url": "https://textotodooficial-hub.github.io/TextTodo/#fuente"
               },
               {
                 "@type": "ListItem",
                 "position": 2,
                 "name": "Traductor Online Multilingüe con Pronunciación",
                 "description": "Traduce textos entre español, inglés, francés, alemán, portugués e italiano con lectura en voz alta y descarga bilingüe.",
-                "url": "https://textotodo.pages.dev/#traductor"
+                "url": "https://textotodooficial-hub.github.io/TextTodo/#traductor"
               },
               {
                 "@type": "ListItem",
                 "position": 3,
                 "name": "Resumidor de Textos y Apuntes Online",
                 "description": "Extrae ideas clave en 6 formatos: ficha ejecutiva, puntos clave, párrafo, preguntas tipo test, plan de acción o hilo.",
-                "url": "https://textotodo.pages.dev/#resumidor"
+                "url": "https://textotodooficial-hub.github.io/TextTodo/#resumidor"
               },
               {
                 "@type": "ListItem",
                 "position": 4,
                 "name": "Corrector Ortográfico y Mejorador de Redacción en Español",
                 "description": "Corrige faltas ortográficas (b/v, c/s/z, k/qu, tildes), puntuación, muletillas y redundancias para correos y trabajos.",
-                "url": "https://textotodo.pages.dev/#mejorador"
+                "url": "https://textotodooficial-hub.github.io/TextTodo/#mejorador"
               },
               {
                 "@type": "ListItem",
                 "position": 5,
                 "name": "Limpiador de Texto, Espacios, HTML y Líneas Duplicadas",
                 "description": "Limpia textos copiados de PDF, Word o webs eliminando saltos rotos, etiquetas HTML, URLs y duplicados.",
-                "url": "https://textotodo.pages.dev/#limpiador"
+                "url": "https://textotodooficial-hub.github.io/TextTodo/#limpiador"
               },
               {
                 "@type": "ListItem",
                 "position": 6,
                 "name": "Contador de Palabras, Caracteres y Analizador SEO con SERP",
                 "description": "Calcula palabras, caracteres sin espacios, tiempo de lectura, legibilidad Fernández Huerta, simulador SERP de Google, bigramas y trigramas SEO.",
-                "url": "https://textotodo.pages.dev/#analizador"
+                "url": "https://textotodooficial-hub.github.io/TextTodo/#analizador"
               },
               {
                 "@type": "ListItem",
                 "position": 7,
                 "name": "Convertidor de Mayúsculas, Minúsculas, Tablas Markdown y Slugs",
                 "description": "20 conversiones instantáneas: MAYÚSCULAS, minúsculas, Tipo Título, camelCase, snake_case, url-slug, tablas Markdown y extractor de enlaces.",
-                "url": "https://textotodo.pages.dev/#convertidor"
+                "url": "https://textotodooficial-hub.github.io/TextTodo/#convertidor"
               },
               {
                 "@type": "ListItem",
                 "position": 8,
                 "name": "Diccionario Español (+15.000 palabras), Rimas y Contador de Sílabas Poéticas",
                 "description": "Encuentra rimas consonantes, asonantes y multisilábicas, consulta definiciones y sinónimos, mide sílabas con sinalefa y practica con caja de ritmos BPM.",
-                "url": "https://textotodo.pages.dev/#rimar"
+                "url": "https://textotodooficial-hub.github.io/TextTodo/#rimar"
               },
               {
                 "@type": "ListItem",
                 "position": 9,
                 "name": "Autopilot 1-Clic (Flujo Inteligente 5 en 1)",
                 "description": "Limpia formato, corrige ortografía, genera resumen ejecutivo, crea preguntas de examen y extrae titular SEO con slug en un solo clic.",
-                "url": "https://textotodo.pages.dev/#autopilot"
+                "url": "https://textotodooficial-hub.github.io/TextTodo/#autopilot"
               },
               {
                 "@type": "ListItem",
                 "position": 10,
                 "name": "Comparador de Versiones Diff A/B, Citas APA 7 y Plantillas Ejecutivas",
                 "description": "Compara dos textos palabra por palabra, genera bibliografía en APA 7, MLA 9, ISO 690, Harvard y BibTeX, y crea correos profesionales.",
-                "url": "https://textotodo.pages.dev/#laboratorio"
+                "url": "https://textotodooficial-hub.github.io/TextTodo/#laboratorio"
               }
             ]
           },
           {
             "@type": "FAQPage",
-            "@id": "https://textotodo.pages.dev/#faq",
+            "@id": "https://textotodooficial-hub.github.io/TextTodo/#faq",
             "mainEntity": [
               {
                 "@type": "Question",

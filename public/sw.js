@@ -1,10 +1,16 @@
-const CACHE = 'textotodo-v12';
+const CACHE = 'textotodo-v14';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
+  './favicon.ico',
+  './favicon-48x48.png',
+  './favicon-32x32.png',
+  './apple-touch-icon.png',
+  './icon-192.png',
+  './icon-512.png',
   './icon.svg',
-  './og-banner.svg'
+  './og-banner.png'
 ];
 
 self.addEventListener('install', event => {
@@ -31,13 +37,28 @@ self.addEventListener('fetch', event => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
 
-  if (request.mode === 'navigate') {
+  // Network-First para navegación HTML y scripts/estilos (evita pantallas blancas tras actualizar versión)
+  if (
+    request.mode === 'navigate' ||
+    request.destination === 'script' ||
+    request.destination === 'style' ||
+    url.pathname.includes('/assets/')
+  ) {
     event.respondWith(
-      fetch(request).catch(() => caches.match('./index.html'))
+      fetch(request)
+        .then(response => {
+          if (response && response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE).then(cache => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request).then(cached => cached || caches.match('./index.html')))
     );
     return;
   }
 
+  // Stale-While-Revalidate para iconos e imágenes estáticas
   event.respondWith(
     caches.match(request).then(cached => {
       const networkFetch = fetch(request)
@@ -53,3 +74,4 @@ self.addEventListener('fetch', event => {
     })
   );
 });
+

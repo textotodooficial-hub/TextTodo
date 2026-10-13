@@ -10,6 +10,12 @@ import {
   SpanishDictionaryEntry,
   WordCategory
 } from '../data/spanishDictionary';
+import {
+  MULTILINGUAL_RHYME_PACKS,
+  RhymeLanguageCode
+} from '../data/languagesData';
+
+export type { RhymeLanguageCode };
 
 export const RHYME_BANK: string[] = FULL_SPANISH_RHYME_DICTIONARY;
 export const DICTIONARY_TOTAL_WORDS: number = TOTAL_DICTIONARY_WORDS_COUNT;
@@ -349,10 +355,67 @@ export function findRhymes(
   type: 'consonante' | 'asonante' | 'multisilabica',
   maxResults: number,
   syllableFilter: number = 0,
-  categoryFilter: 'todas' | WordCategory = 'todas'
+  categoryFilter: 'todas' | WordCategory = 'todas',
+  lang: RhymeLanguageCode = 'es'
 ): RhymeSuggestion[] {
   const baseNorm = normalizeWord(term);
   if (!baseNorm) return [];
+
+  // Multilingual rhyme bank support (EN, FR, PT, IT, DE, CA)
+  if (lang !== 'es' && MULTILINGUAL_RHYME_PACKS[lang]) {
+    const pack = MULTILINGUAL_RHYME_PACKS[lang];
+    const targetKey = getRhymeKey(term, type);
+    const baseSyllables = countWordSyllables(term);
+    const baseSkeleton = getVowelSkeleton(term);
+    const results: RhymeSuggestion[] = [];
+    const seenMulti = new Set<string>();
+
+    for (const candidate of pack.words) {
+      const cNorm = normalizeWord(candidate);
+      if (!cNorm || cNorm === baseNorm || seenMulti.has(cNorm)) continue;
+      const cSyl = countWordSyllables(candidate);
+      if (syllableFilter > 0 && cSyl !== syllableFilter) continue;
+      const cCat = detectGrammaticalCategory(candidate);
+      if (categoryFilter !== 'todas' && cCat !== categoryFilter) continue;
+
+      const cCons = getRhymeKey(candidate, 'consonante');
+      const cAson = getRhymeKey(candidate, 'asonante');
+      const cVowels = getVowelSkeleton(candidate);
+
+      let score = 0;
+      if (type === 'consonante') {
+        if (cCons === targetKey || (cNorm.length >= 2 && baseNorm.length >= 2 && cNorm.slice(-2) === baseNorm.slice(-2))) {
+          score = cCons === targetKey ? 100 : 84;
+        }
+      } else if (type === 'asonante') {
+        if (cAson === targetKey || cAson.slice(-1) === targetKey.slice(-1)) {
+          score = cAson === targetKey ? 100 : 80;
+        }
+      } else {
+        if (cVowels === baseSkeleton || cVowels.split('-').slice(-2).join('-') === baseSkeleton.split('-').slice(-2).join('-')) {
+          score = 95;
+        }
+      }
+
+      if (score > 0) {
+        seenMulti.add(cNorm);
+        results.push({
+          word: candidate,
+          syllables: cSyl,
+          syllableBreakdown: splitSpanishSyllables(candidate).join('·'),
+          vowelPattern: cVowels,
+          stress: detectWordStress(candidate),
+          category: cCat,
+          score: score - Math.abs(cSyl - baseSyllables) * 2
+        });
+      }
+    }
+
+    results.sort((a, b) => b.score - a.score || a.word.localeCompare(b.word));
+    if (results.length >= 4) {
+      return results.slice(0, maxResults);
+    }
+  }
 
   const allIndexed = ensureDictionaryIndexed();
   const targetKey = getRhymeKey(term, type);
@@ -473,6 +536,47 @@ export function findRhymes(
   }
 
   return unique;
+}
+
+// Instant generator of complete poetic stanzas (Pareado AA, Cuarteta ABAB, Redondilla ABBA, Barras Rap)
+export function generatePoeticStanza(
+  keyword: string,
+  stanzaType: 'pareado' | 'cuarteta' | 'redondilla' | 'rap',
+  lang: RhymeLanguageCode = 'es'
+): string {
+  const clean = (keyword || 'corazón').trim() || 'corazón';
+  const rhymesA = findRhymes(clean, 'consonante', 8, 0, 'todas', lang).map(r => r.word);
+  const rA1 = rhymesA[0] || (lang === 'en' ? 'desire' : 'canción');
+  const rA2 = rhymesA[1] || (lang === 'en' ? 'higher' : 'pasión');
+  const rA3 = rhymesA[2] || (lang === 'en' ? 'empire' : 'ilusión');
+
+  const secondarySeed = lang === 'en' ? 'night' : lang === 'fr' ? 'lumière' : lang === 'pt' ? 'mar' : lang === 'it' ? 'luce' : lang === 'de' ? 'Nacht' : 'camino';
+  const rhymesB = findRhymes(secondarySeed, 'consonante', 6, 0, 'todas', lang).map(r => r.word);
+  const rB1 = rhymesB[0] || (lang === 'en' ? 'bright' : 'destino');
+
+  if (lang === 'en') {
+    if (stanzaType === 'pareado') {
+      return `Walking through the shadows with a burning ${clean},\nRising from the ashes taking everything ${rA1}.`;
+    }
+    if (stanzaType === 'cuarteta') {
+      return `In the middle of the ${secondarySeed} I found my ${clean},\nEvery single step was leading to the ${rB1},\nTurning every memory into a ${rA1},\nShining in the dark and reaching ${rA2}.`;
+    }
+    if (stanzaType === 'redondilla') {
+      return `Nothing can extinguish this eternal ${clean},\nGuiding every step across the silent ${secondarySeed},\nShining in the dark with unstoppable ${rB1},\nBuilding up the dream that sets my soul on ${rA1}.`;
+    }
+    return `Step up on the stage, yeah I do it for the ${clean},\nFocused on the vision while I take the level ${rA1},\nNever looking back, we are building up an ${rA3},\nEvery single bar is pure energy and ${rA2}.`;
+  }
+
+  if (stanzaType === 'pareado') {
+    return `Buscando en el silencio la verdad de mi ${clean},\nTransformo cada paso en una nueva ${rA1}.`;
+  }
+  if (stanzaType === 'cuarteta') {
+    return `Brilla en la penumbra la fuerza de mi ${clean},\nMientras abro paso firme por cada ${secondarySeed},\nConvierto cada herida en una nueva ${rA1},\nY escribo con coraje mi propio ${rB1}.`;
+  }
+  if (stanzaType === 'redondilla') {
+    return `Llevo en cada verso la verdad de mi ${clean},\nAvanzando sin temor por mitad de este ${secondarySeed},\nForjando a fuego lento las llaves de mi ${rB1},\nPara que resuene eterna toda esta ${rA1}.`;
+  }
+  return `Subo a la tarima con el pulso en ${clean},\nCada barra escrita tiene peso y ${rA1},\nNadie nos regala nada, pura vocación y ${rA2},\nDejando huella firme en toda la ${rA3}.`;
 }
 
 // ============================================================================

@@ -125,28 +125,28 @@ export interface DonationTier {
 export const DONATION_TIERS: DonationTier[] = [
   {
     amount: '2',
-    title: 'Invitar a un café ☕',
-    badge: 'Apoyo básico',
-    desc: 'Un pequeño gesto voluntario para agradecer que TextoTodo sea 100% gratis y sin anuncios.'
+    title: 'Aportación Simbólica ☕',
+    badge: 'Apoyo inicial',
+    desc: 'Contribución voluntaria para respaldar el acceso abierto y gratuito de la plataforma.'
   },
   {
     amount: '5',
-    title: 'Impulsar el proyecto ⚡',
+    title: 'Impulso Editorial ⚡',
     badge: 'Más habitual',
-    desc: 'Ayuda a mantener todas las herramientas, descargas y diccionarios abiertos gratis para todos.',
+    desc: 'Ayuda al mantenimiento continuo y optimización de las 10 suites lingüísticas.',
     featured: true
   },
   {
     amount: '10',
-    title: 'Mecenas de TextoTodo 🏆',
+    title: 'Mecenas del Proyecto 🏆',
     badge: 'Gran apoyo',
-    desc: 'Contribuye directamente a que sigamos mejorando las 10 suites sin poner muros de pago.'
+    desc: 'Respaldo para mantener la plataforma 100% privada y sin publicidad intrusiva.'
   },
   {
     amount: '20',
-    title: 'Patrocinador VIP 💎',
-    badge: 'Máximo apoyo',
-    desc: 'Apoyo extraordinario para respaldar el desarrollo independiente de nuevas funciones gratuitas.'
+    title: 'Patrocinador Principal 💎',
+    badge: 'Máximo respaldo',
+    desc: 'Contribución prioritaria para la investigación y desarrollo de nuevos algoritmos.'
   }
 ];
 

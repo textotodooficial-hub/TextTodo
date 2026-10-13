@@ -7,4 +7,4 @@ Allow: /
 User-agent: Bingbot
 Allow: /
 
-Sitemap: https://textotodo.pages.dev/sitemap.xml
+Sitemap: https://textotodooficial-hub.github.io/TextTodo/sitemap.xml

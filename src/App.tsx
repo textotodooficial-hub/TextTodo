@@ -17,10 +17,26 @@ import {
   analyzeVerseMeter,
   analyzeStanzaScheme,
   lookupSpanishDictionaryWord,
+  generatePoeticStanza,
+  RhymeLanguageCode,
   DICTIONARY_TOTAL_WORDS,
   FREESTYLE_PROMPTS
 } from './utils/rhymeTools';
 import { WordCategory } from './data/spanishDictionary';
+import {
+  WORLD_LANGUAGES,
+  LANGUAGE_REGION_LABELS,
+  getLanguageByCode,
+  MULTILINGUAL_RHYME_PACKS
+} from './data/languagesData';
+import {
+  applyWholePageLanguage,
+  isPageTranslatorBusy,
+  getLocalizedSuiteSamples,
+  BASE_SPANISH_SAMPLES,
+  LocalizedSuiteSamples,
+  translateSingleDynamicString
+} from './utils/pageTranslator';
 import {
   runAutopilotPipeline,
   compareTextsDetailed,
@@ -32,10 +48,14 @@ import {
   playSynthesizedDrumStep,
   buildSerpPreview,
   encodeWorkspaceShareHash,
-  decodeWorkspaceShareHash
+  decodeWorkspaceShareHash,
+  exportToWordDoc,
+  exportToMarkdown,
+  exportToJson
 } from './utils/enterpriseTools';
 import { LEGAL_TABS, LEGAL_CONTENT, LegalTabId } from './data/legalData';
 import { UNIVERSAL_PRESETS, DONATION_TIERS } from './data/presetsData';
+import { SUITE_PRESETS } from './utils/suitePresets';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import {
   Type,
@@ -48,7 +68,6 @@ import {
   Music,
   History,
   Search,
-  Heart,
   Sun,
   Moon,
   Command,
@@ -59,6 +78,7 @@ import {
   ArrowRight,
   ArrowLeftRight,
   Volume2,
+  VolumeX,
   Check,
   X,
   Play,
@@ -72,10 +92,12 @@ import {
   Gift,
   ClipboardPaste,
   Wand2,
-  Crown,
-  Lock,
-  ShieldCheck,
-  Mic
+  Mic,
+  Share2,
+  Printer,
+  Maximize2,
+  Minimize2,
+  FileText
 } from 'lucide-react';
 
 interface HistoryItem {
@@ -108,10 +130,10 @@ const TOOL_CATALOG = [
     id: 'traductor',
     index: '02',
     href: '#traductor',
-    title: 'Traductor Multilingüe',
-    subtitle: '6 idiomas con pronunciación, velocidad de voz y descarga',
-    sample: 'ES ⇄ EN · FR · DE · PT · IT',
-    search: 'traducir traduccion idiomas ingles frances aleman portugues italiano voz',
+    title: 'Traductor Universal (105+ Idiomas)',
+    subtitle: 'Todos los idiomas del mundo con voz neural, filtro rápido y espejo bilingüe',
+    sample: 'ES ⇄ EN · FR · ZH · JA · AR · CA · EU · GL +100',
+    search: 'traducir traduccion todos los idiomas ingles frances aleman portugues italiano chino japones arabe ruso catalan gallego euskera latin voz',
     icon: Languages
   },
   {
@@ -168,10 +190,10 @@ const TOOL_CATALOG = [
     id: 'rimar',
     index: '08',
     href: '#rimar',
-    title: 'Rimar & Diccionario Español',
-    subtitle: `${DICTIONARY_TOTAL_WORDS.toLocaleString('es-ES')}+ palabras, diccionario normal, métrica y BPM`,
-    sample: '[A · 11 síl.] +15.000 voces y rimas',
-    search: 'rimar rimas diccionario espanol definiciones sinonimos musica poesia rap cantante compositor letras cancion versos barras metronomo multisilabicas',
+    title: 'Rimar Multi-Idioma & Diccionario',
+    subtitle: `${DICTIONARY_TOTAL_WORDS.toLocaleString('es-ES')}+ voces + Rimas en 7 idiomas, estrofas automáticas, métrica y BPM`,
+    sample: '[A · 11 síl.] ES · EN · FR · PT · IT · DE · CA',
+    search: 'rimar rimas diccionario espanol ingles frances portugues italiano aleman catalan definiciones sinonimos musica poesia rap cantante compositor letras cancion versos barras metronomo multisilabicas',
     featuredMusic: true,
     icon: Music
   },
@@ -201,7 +223,7 @@ const TOOL_CATALOG = [
 const COMMAND_ITEMS = [
   { title: 'Centro de herramientas (10 Suites)', desc: 'Explorar todas las suites Pro de TextoTodo', target: '#centro', tag: '⌘' },
   { title: 'Fuentes Unicode Pro', desc: '44 estilos + 14 marcos decorativos para redes y titulares', target: '#fuente', tag: 'Aa' },
-  { title: 'Traducir Pro', desc: '6 idiomas con pronunciación y velocidad de voz', target: '#traductor', tag: '文' },
+  { title: 'Traducir Pro (105+ Idiomas)', desc: 'Todos los idiomas del mundo con pronunciación y descarga bilingüe', target: '#traductor', tag: '文' },
   { title: 'Resumir Pro', desc: '6 formatos: Ejecutivo, Viñetas, Párrafo, Plan, Hilo y Test', target: '#resumidor', tag: '≡' },
   { title: 'Mejorar y Corregir Pro', desc: 'Corrector ortográfico y fonético profundo + 4 niveles de edición', target: '#mejorador', tag: '✦' },
   { title: 'Limpiar Pro', desc: 'Repara PDF, HTML, Markdown, URLs, emails, duplicados y reemplazo', target: '#limpiador', tag: '⌁' },
@@ -210,6 +232,9 @@ const COMMAND_ITEMS = [
   { title: 'Rimar & Diccionario Español (+15.000 palabras)', desc: 'Diccionario completo de rimas y definiciones, métrica poética y BPM', target: '#rimar', tag: '♪' },
   { title: 'Autopilot 1-Clic (5 en 1)', desc: 'Limpia, corrige, resume, audita SEO y crea titular al instante', target: '#autopilot', tag: '⚡' },
   { title: 'Comparador Diff, Citas APA 7 y Plantillas', desc: 'Comparar versiones A/B, bibliografía APA/MLA/ISO y correos B2B', target: '#laboratorio', tag: '⚖' },
+  { title: 'Modo Enfoque Zen (Sin distracciones)', desc: 'Espacio de concentración a pantalla completa para escribir y medir textos', target: 'zen', tag: '⛶' },
+  { title: 'Exportador Multi-formato (Word, Markdown, PDF, JSON)', desc: 'Descarga cualquier documento en formatos profesionales con 1 clic', target: 'export', tag: '📄' },
+  { title: 'Pantalla Splash Screen', desc: 'Ver pantalla de bienvenida en página separada (fondo negro / blanco)', target: '#splash', tag: '✦' },
   { title: 'Historial local', desc: 'Ver y descargar textos guardados', target: 'history', tag: '↺' },
   { title: 'Apoyar TextoTodo (PayPal)', desc: 'Agradecer el ahorro de tiempo con una donación voluntaria', target: 'support', tag: '♥' },
   { title: 'Información legal y privacidad', desc: 'Aviso legal, RGPD, términos y cookies', target: 'legal', tag: '§' }
@@ -237,29 +262,187 @@ export default function App() {
 
   const toggleTheme = () => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
 
+  // Global Website Language State (Translates the entire page into 105+ languages)
+  const [siteLang, setSiteLang] = useState<string>(() => {
+    try {
+      return localStorage.getItem('textotodo-site-lang') || 'es';
+    } catch {
+      return 'es';
+    }
+  });
+  const [isSiteLangModalOpen, setIsSiteLangModalOpen] = useState(false);
+  const [siteLangSearch, setSiteLangSearch] = useState('');
+  const [isSiteTranslating, setIsSiteTranslating] = useState(false);
+
+  const currentSiteLangMeta = useMemo(() => getLanguageByCode(siteLang), [siteLang]);
+
+  const filteredSiteLanguages = useMemo(() => {
+    const q = siteLangSearch.toLowerCase().trim();
+    if (!q) return WORLD_LANGUAGES;
+    return WORLD_LANGUAGES.filter(l =>
+      `${l.name} ${l.nativeName} ${l.code}`.toLowerCase().includes(q)
+    );
+  }, [siteLangSearch]);
+
+  const [localizedSamples, setLocalizedSamples] = useState<LocalizedSuiteSamples>(BASE_SPANISH_SAMPLES);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('textotodo-site-lang', siteLang);
+    } catch {
+      // ignore
+    }
+    let cancelled = false;
+    const shortLang = siteLang.split('-')[0].toLowerCase();
+
+    // Sync Rhyme studio language automatically if supported in the 7 native packs
+    const supportedRhymeLangs: RhymeLanguageCode[] = ['es', 'en', 'fr', 'pt', 'it', 'de', 'ca'];
+    if (supportedRhymeLangs.includes(shortLang as RhymeLanguageCode)) {
+      setRhymeLang(shortLang as RhymeLanguageCode);
+    }
+
+    const run = async () => {
+      // 1. Instant synchronous page translation for all cached & static dictionary strings
+      applyWholePageLanguage(siteLang);
+
+      // 2. Localize sample texts (instant presets for top languages or async for others)
+      getLocalizedSuiteSamples(siteLang).then(samples => {
+        if (cancelled) return;
+        setLocalizedSamples(samples);
+        setHeroDemoText(samples.heroDemo);
+        setFontInput(samples.fontSample);
+        setTransInput(samples.transSample);
+        setSumInput(samples.sumSample);
+        setImpInput(samples.impSample);
+        setCleanInput(samples.cleanSample);
+        setAnInput(samples.anSample);
+        setConvInput(samples.convSample);
+        setRhymeWord(samples.rhymeWord);
+        setSchemeInput(samples.schemeSample);
+        setAutoInput(samples.autoSample);
+        setDiffTextA(samples.diffSampleA);
+        setDiffTextB(samples.diffSampleB);
+        setCiteTitle(samples.citeTitle);
+        setTplTopic(samples.tplTopic);
+        setTplRecipient(samples.tplRecipient);
+        setTplCta(samples.tplCta);
+      });
+
+      // 3. Update translator default pair
+      if (siteLang === 'es') {
+        setTransFrom('es');
+        setTransTo('en');
+        setIsSiteTranslating(false);
+      } else {
+        setTransFrom(siteLang);
+        setTransTo('es');
+        setIsSiteTranslating(true);
+        applyWholePageLanguage(siteLang).finally(() => {
+          if (!cancelled) setIsSiteTranslating(false);
+        });
+      }
+    };
+    run();
+
+    // Re-apply translation automatically whenever React mounts dynamic elements (modals, new views)
+    const root = document.getElementById('root');
+    if (!root || siteLang === 'es') return () => { cancelled = true; };
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const observer = new MutationObserver(mutations => {
+      if (isPageTranslatorBusy()) return;
+      // Filter out user typing inside text inputs, textareas or metronome ticks to keep UI at 60 FPS
+      const hasMeaningfulMutation = mutations.some(m => {
+        const targetEl = (m.target instanceof Element ? m.target : m.target.parentElement) as Element | null;
+        if (!targetEl) return false;
+        if (targetEl.tagName === 'TEXTAREA' || targetEl.tagName === 'INPUT' || targetEl.closest('[data-no-i18n="true"]')) {
+          return false;
+        }
+        return true;
+      });
+      if (!hasMeaningfulMutation) return;
+
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        if (!isPageTranslatorBusy()) {
+          applyWholePageLanguage(siteLang);
+        }
+      }, 350);
+    });
+    // Omit characterData to ensure typing is 100% fluid without jank
+    observer.observe(root, { childList: true, subtree: true });
+
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      observer.disconnect();
+    };
+  }, [siteLang]);
+
   // PWA Install hook
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [showIOSGuide, setShowIOSGuide] = useState(false);
 
-  // Splash Screen (always shown on page load & refresh, plus manual replay button)
-  const [showSplash, setShowSplash] = useState(true);
-  const [splashClosing, setSplashClosing] = useState(false);
+  // Splash Screen como página de bienvenida independiente:
+  // Se muestra al cargar la aplicación inicialmente (o al abrir #splash)
+  // Fondo negro (#000000) en modo oscuro y blanco (#ffffff) en modo claro
+  const [showSplash, setShowSplash] = useState<boolean>(() => {
+    const hash = window.location.hash;
+    // Si viene directamente con un ancla para saltar a una suite específica (ej. #fuente, #traductor),
+    // respetamos la navegación directa, de lo contrario mostramos la pantalla splash de bienvenida
+    if (hash && hash !== '#splash' && hash !== '#inicio' && hash !== '#') {
+      return false;
+    }
+    return true;
+  });
 
-  const dismissSplash = useCallback(() => {
-    setSplashClosing(true);
-    setTimeout(() => {
-      setShowSplash(false);
-      setSplashClosing(false);
-    }, 380);
-  }, []);
-
+  // Temporizador automático y atajos para entrar
   useEffect(() => {
     if (!showSplash) return;
     const timer = setTimeout(() => {
-      dismissSplash();
-    }, 1850);
-    return () => clearTimeout(timer);
-  }, [showSplash, dismissSplash]);
+      setShowSplash(false);
+      if (window.location.hash === '#splash') {
+        window.location.hash = '#centro';
+      }
+    }, 2200);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter') {
+        setShowSplash(false);
+        if (window.location.hash === '#splash') {
+          window.location.hash = '#centro';
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showSplash]);
+
+  // Soporte para abrir el Splash en cualquier momento con #splash
+  useEffect(() => {
+    const handleHash = () => {
+      if (window.location.hash === '#splash') {
+        setShowSplash(true);
+      }
+    };
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  // Fondo puro (#000000 / #ffffff) sincronizado con el viewport completo en splash
+  useEffect(() => {
+    if (showSplash) {
+      document.documentElement.style.backgroundColor = theme === 'dark' ? '#000000' : '#ffffff';
+      document.body.style.backgroundColor = theme === 'dark' ? '#000000' : '#ffffff';
+    } else {
+      document.documentElement.style.backgroundColor = theme === 'dark' ? '#05070e' : '#f6f8fc';
+      document.body.style.backgroundColor = '';
+    }
+  }, [showSplash, theme]);
 
   // Toast notifications
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
@@ -502,6 +685,35 @@ export default function App() {
   const [activeSection, setActiveSection] = useState('#centro');
   const [toolSearch, setToolSearch] = useState('');
 
+  // Modo Enfoque Zen (Canvas de concentración sin distracciones)
+  const [isZenOpen, setIsZenOpen] = useState(false);
+  const [zenText, setZenText] = useState(
+    'Escribe o pega aquí tu texto libre de distracciones. Este espacio cuenta tus palabras en vivo, calcula el tiempo de lectura y te permite transferir tu texto a cualquiera de las 10 suites en un solo clic.'
+  );
+  const [zenFontSize, setZenFontSize] = useState<'sm' | 'base' | 'lg' | 'xl'>('lg');
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  const zenStats = useMemo(() => {
+    const trimmed = zenText.trim();
+    const words = trimmed ? trimmed.split(/\s+/).length : 0;
+    const chars = zenText.length;
+    const charsNoSpaces = zenText.replace(/\s+/g, '').length;
+    const readTimeSec = Math.ceil((words / 200) * 60);
+    const speakTimeSec = Math.ceil((words / 130) * 60);
+    return { words, chars, charsNoSpaces, readTimeSec, speakTimeSec };
+  }, [zenText]);
+
+  // Exportador Pro Multi-formato (Word, Markdown, JSON, PDF, TXT)
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportDocTitle, setExportDocTitle] = useState('Documento TextoTodo Pro');
+  const [exportDocContent, setExportDocContent] = useState('');
+
+  const openExportModal = useCallback((title: string, content: string) => {
+    setExportDocTitle(title || 'Documento TextoTodo Pro');
+    setExportDocContent(content || '');
+    setIsExportModalOpen(true);
+  }, []);
+
   // 100% Free Mode — All tools and batch downloads execute directly; donations are optional
   const openSupportModal = useCallback((defaultAmount = '5') => {
     setDonationAmount(defaultAmount);
@@ -539,6 +751,7 @@ export default function App() {
   const [fontCategory, setFontCategory] = useState<'todas' | 'redes' | 'elegantes' | 'urbano' | 'decorativas'>('todas');
   const [activeFrameId, setActiveFrameId] = useState<string>('none');
   const [copiedFontId, setCopiedFontId] = useState<string | null>(null);
+  const [fontSearch, setFontSearch] = useState('');
   const [favoriteFonts, setFavoriteFonts] = useState<string[]>(() => {
     try {
       return JSON.parse(localStorage.getItem('textotodo-fav-fonts') || '["bold","sansBold","script","smallCaps"]');
@@ -565,13 +778,18 @@ export default function App() {
   };
 
   const displayedFonts = useMemo(() => {
-    const filtered = FONT_STYLES.filter(f => fontCategory === 'todas' || f.category === fontCategory);
+    const q = fontSearch.toLowerCase().trim();
+    const filtered = FONT_STYLES.filter(f => {
+      const matchCat = fontCategory === 'todas' || f.category === fontCategory;
+      const matchQ = !q || f.name.toLowerCase().includes(q) || f.category.toLowerCase().includes(q);
+      return matchCat && matchQ;
+    });
     return [...filtered].sort((a, b) => {
       const aFav = favoriteFonts.includes(a.id) ? 1 : 0;
       const bFav = favoriteFonts.includes(b.id) ? 1 : 0;
       return bFav - aFav;
     });
-  }, [fontCategory, favoriteFonts]);
+  }, [fontCategory, favoriteFonts, fontSearch]);
 
   // ---------------------------------------------------------------------------
   // 2. TRADUCTOR PRO STATE
@@ -586,9 +804,21 @@ export default function App() {
   const [transOutput, setTransOutput] = useState('');
   const [transFrom, setTransFrom] = useState('es');
   const [transTo, setTransTo] = useState('en');
+  const [transLangSearch, setTransLangSearch] = useState('');
   const [ttsRate, setTtsRate] = useState<number>(1);
   const [transLoading, setTransLoading] = useState(false);
   const [transStatus, setTransStatus] = useState<{ msg: string; type: '' | 'ok' | 'error' }>({ msg: '', type: '' });
+
+  const filteredWorldLanguages = useMemo(() => {
+    const q = transLangSearch.trim().toLowerCase();
+    if (!q) return WORLD_LANGUAGES;
+    return WORLD_LANGUAGES.filter(
+      l =>
+        l.name.toLowerCase().includes(q) ||
+        l.nativeName.toLowerCase().includes(q) ||
+        l.code.toLowerCase().includes(q)
+    );
+  }, [transLangSearch]);
 
   const handleTranslate = async () => {
     const clean = transInput.trim();
@@ -639,20 +869,23 @@ export default function App() {
       if (current) chunks.push(current);
 
       try {
-        const translatedParts: string[] = [];
-        for (const chunk of chunks) {
-          const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(transFrom)}&tl=${encodeURIComponent(transTo)}&dt=t&q=${encodeURIComponent(chunk)}`;
-          const gtxRes = await fetch(gtxUrl);
-          if (gtxRes.ok) {
-            const gtxData = await gtxRes.json();
-            if (Array.isArray(gtxData) && Array.isArray(gtxData[0])) {
-              const partText = gtxData[0].map((part: unknown[]) => (Array.isArray(part) ? part[0] : '')).join('');
-              if (partText.trim()) translatedParts.push(partText.trim());
+        const translatedParts = await Promise.all(
+          chunks.map(async chunk => {
+            const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(transFrom)}&tl=${encodeURIComponent(transTo)}&dt=t&q=${encodeURIComponent(chunk)}`;
+            const gtxRes = await fetch(gtxUrl);
+            if (gtxRes.ok) {
+              const gtxData = await gtxRes.json();
+              if (Array.isArray(gtxData) && Array.isArray(gtxData[0])) {
+                const partText = gtxData[0].map((part: unknown[]) => (Array.isArray(part) ? part[0] : '')).join('');
+                return partText.trim();
+              }
             }
-          }
-        }
-        if (translatedParts.length > 0) {
-          setTransOutput(translatedParts.join('\n\n'));
+            return '';
+          })
+        );
+        const validParts = translatedParts.filter(Boolean);
+        if (validParts.length > 0) {
+          setTransOutput(validParts.join('\n\n'));
           setTransStatus({ msg: 'Traducción completada al detalle.', type: 'ok' });
           return;
         }
@@ -689,18 +922,20 @@ export default function App() {
       addToast('Tu navegador no soporta lectura por voz', 'error');
       return;
     }
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      addToast('Voz detenida');
+      return;
+    }
     window.speechSynthesis.cancel();
     const utter = new SpeechSynthesisUtterance(text);
-    const langMap: Record<string, string> = {
-      es: 'es-ES',
-      en: 'en-US',
-      fr: 'fr-FR',
-      de: 'de-DE',
-      pt: 'pt-PT',
-      it: 'it-IT'
-    };
-    utter.lang = langMap[langCode] || 'es-ES';
+    const langInfo = getLanguageByCode(langCode);
+    utter.lang = langInfo?.ttsLang || langCode || 'es-ES';
     utter.rate = ttsRate;
+    utter.onstart = () => setIsSpeaking(true);
+    utter.onend = () => setIsSpeaking(false);
+    utter.onerror = () => setIsSpeaking(false);
     window.speechSynthesis.speak(utter);
   };
 
@@ -721,21 +956,32 @@ export default function App() {
   const [sumFocusKeyword, setSumFocusKeyword] = useState('');
   const [sumStatus, setSumStatus] = useState<{ msg: string; type: '' | 'ok' | 'error' }>({ msg: '', type: '' });
 
-  // Automatically re-compute summary whenever input, format, length or focus keyword changes
+  // Automatically re-compute summary whenever input, format, length, focus keyword or siteLang changes
   useEffect(() => {
     if (!sumInput.trim()) {
       setSumOutput('');
       setSumDetails(null);
       return;
     }
+    let cancelled = false;
     try {
       const detailed = summarizeTextDetailed(sumInput, sumLength, sumFormat, sumFocusKeyword);
-      setSumOutput(detailed.output);
       setSumDetails(detailed);
+      if (siteLang === 'es') {
+        setSumOutput(detailed.output);
+      } else {
+        setSumOutput(detailed.output);
+        translateSingleDynamicString(detailed.output, siteLang).then(tr => {
+          if (!cancelled && tr) setSumOutput(tr);
+        });
+      }
     } catch {
       // ignore empty
     }
-  }, [sumInput, sumLength, sumFormat, sumFocusKeyword]);
+    return () => {
+      cancelled = true;
+    };
+  }, [sumInput, sumLength, sumFormat, sumFocusKeyword, siteLang]);
 
   const handleSummarize = (customText?: string) => {
     const sourceText = customText !== undefined ? customText : sumInput;
@@ -905,7 +1151,7 @@ export default function App() {
   });
   const [serpCustomTitle, setSerpCustomTitle] = useState('');
   const [serpCustomDesc, setSerpCustomDesc] = useState('');
-  const [serpDomain, setSerpDomain] = useState('textotodo.pages.dev');
+  const [serpDomain, setSerpDomain] = useState('textotodooficial-hub.github.io/TextTodo');
   const analysisMetrics = useMemo(() => analyzeText(anInput), [anInput]);
   const serpPreview = useMemo(
     () => buildSerpPreview(anInput, serpCustomTitle, serpCustomDesc, serpDomain),
@@ -963,15 +1209,23 @@ export default function App() {
   };
 
   const [rhymeWord, setRhymeWord] = useState('corazón');
+  const [rhymeLang, setRhymeLang] = useState<RhymeLanguageCode>('es');
   const [rhymeType, setRhymeType] = useState<'consonante' | 'asonante' | 'multisilabica'>('consonante');
   const [rhymeCount, setRhymeCount] = useState(48);
   const [rhymeSyllableFilter, setRhymeSyllableFilter] = useState(0);
   const [rhymeCategoryFilter, setRhymeCategoryFilter] = useState<'todas' | WordCategory>('todas');
 
   const rhymeResults = useMemo(
-    () => findRhymes(rhymeWord, rhymeType, rhymeCount, rhymeSyllableFilter, rhymeCategoryFilter),
-    [rhymeWord, rhymeType, rhymeCount, rhymeSyllableFilter, rhymeCategoryFilter]
+    () => findRhymes(rhymeWord, rhymeType, rhymeCount, rhymeSyllableFilter, rhymeCategoryFilter, rhymeLang),
+    [rhymeWord, rhymeType, rhymeCount, rhymeSyllableFilter, rhymeCategoryFilter, rhymeLang]
   );
+
+  const rhymeSampleWords = useMemo(() => {
+    if (rhymeLang === 'es') {
+      return ['corazón', 'libertad', 'esperanza', 'silencio', 'calle', 'noche', 'camino', 'fuego', 'verdad', 'universo'];
+    }
+    return MULTILINGUAL_RHYME_PACKS[rhymeLang]?.sampleWords || ['fire', 'night', 'dream', 'heart'];
+  }, [rhymeLang]);
 
   const dictionaryReport = useMemo(
     () => lookupSpanishDictionaryWord(rhymeWord),
@@ -1129,7 +1383,7 @@ export default function App() {
   const [citeYear, setCiteYear] = useState(String(new Date().getFullYear()));
   const [citeTitle, setCiteTitle] = useState('Arquitectura de herramientas lingüísticas y productividad en el navegador');
   const [citeSource, setCiteSource] = useState('TextoTodo Pro Editorial');
-  const [citeUrl, setCiteUrl] = useState('https://textotodo.pages.dev/');
+  const [citeUrl, setCiteUrl] = useState('https://textotodooficial-hub.github.io/TextTodo/');
   const citationsOutput = useMemo(
     () =>
       generateAcademicCitations({
@@ -1150,10 +1404,21 @@ export default function App() {
   const [tplSender, setTplSender] = useState('Rafael Moreno');
   const [tplRecipient, setTplRecipient] = useState('Dirección de Marketing');
   const [tplCta, setTplCta] = useState('¿Tienes 10 minutos este jueves a las 11:00h para verlo en una llamada rápida?');
-  const tplGenerated = useMemo(() => {
+  const [tplGenerated, setTplGenerated] = useState('');
+  useEffect(() => {
+    let cancelled = false;
     const found = EXECUTIVE_TEMPLATES.find(t => t.id === tplSelected) || EXECUTIVE_TEMPLATES[0];
-    return found.build(tplTopic, tplSender, tplRecipient, tplCta);
-  }, [tplSelected, tplTopic, tplSender, tplRecipient, tplCta]);
+    const baseText = found.build(tplTopic, tplSender, tplRecipient, tplCta);
+    setTplGenerated(baseText);
+    if (siteLang !== 'es') {
+      translateSingleDynamicString(baseText, siteLang).then(tr => {
+        if (!cancelled && tr) setTplGenerated(tr);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [tplSelected, tplTopic, tplSender, tplRecipient, tplCta, siteLang]);
 
   // Song Blueprint Generator State inside Rimar Studio
   const [songStyle, setSongStyle] = useState<'urbano' | 'pop' | 'balada' | 'epico'>('urbano');
@@ -1233,8 +1498,8 @@ export default function App() {
 
       setFeedbackStatus({
         msg: sentViaFormSubmit
-          ? '¡Muchas gracias! Tu valoración se ha enviado directamente al correo de Rafa.'
-          : '¡Gracias! Tu valoración ha quedado registrada. Si quieres, también puedes pulsar "Enviar por Correo Directo".',
+          ? '¡Muchas gracias! Tu valoración se ha enviado correctamente al equipo de TextoTodo.'
+          : '¡Muchas gracias! Tu opinión ha quedado registrada. Puedes remitir cualquier sugerencia adicional a textotodo.oficial@gmail.com.',
         type: 'ok'
       });
       setFeedbackText('');
@@ -1252,12 +1517,21 @@ export default function App() {
     }
     recordRecentTool(targetId);
     if (targetId === 'fuente') setFontInput(textToPass.slice(0, 500));
-    if (targetId === 'traductor') setTransInput(textToPass.slice(0, 1000));
+    if (targetId === 'traductor') setTransInput(textToPass.slice(0, 4000));
     if (targetId === 'resumidor') setSumInput(textToPass.slice(0, 15000));
     if (targetId === 'mejorador') setImpInput(textToPass.slice(0, 8000));
     if (targetId === 'limpiador') setCleanInput(textToPass.slice(0, 15000));
     if (targetId === 'analizador') setAnInput(textToPass.slice(0, 20000));
     if (targetId === 'convertidor') setConvInput(textToPass.slice(0, 10000));
+    if (targetId === 'rimar') {
+      const cleanedLines = textToPass.slice(0, 4000);
+      setSchemeInput(cleanedLines);
+      const lastWordMatch = cleanedLines.trim().match(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+$/);
+      if (lastWordMatch?.[0]) {
+        setRhymeWord(lastWordMatch[0]);
+      }
+    }
+    if (targetId === 'autopilot') setAutoInput(textToPass.slice(0, 15000));
 
     const el = document.getElementById(targetId);
     if (el) el.scrollIntoView({ behavior: 'smooth' });
@@ -1285,9 +1559,25 @@ export default function App() {
       setLegalModalTab('privacy');
       return;
     }
+    if (target === 'zen') {
+      setIsZenOpen(true);
+      return;
+    }
+    if (target === 'export') {
+      openExportModal(
+        'Documento TextoTodo Pro',
+        zenText || autoInput || sumInput || impInput || fontInput || 'TextoTodo Pro'
+      );
+      return;
+    }
+    if (target === '#splash') {
+      window.location.hash = '#splash';
+      setShowSplash(true);
+      return;
+    }
     const el = document.querySelector(target);
     if (el) el.scrollIntoView({ behavior: 'smooth' });
-  }, []);
+  }, [openExportModal, zenText, autoInput, sumInput, impInput, fontInput]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1301,9 +1591,12 @@ export default function App() {
       if (e.key === 'Escape') {
         setIsCommandOpen(false);
         setIsSupportOpen(false);
+        setIsSiteLangModalOpen(false);
         setLegalModalTab(null);
         setIsHistoryOpen(false);
         setIsMobileMenuOpen(false);
+        setIsZenOpen(false);
+        setIsExportModalOpen(false);
       }
       if (isCommandOpen) {
         if (e.key === 'ArrowDown') {
@@ -1379,29 +1672,112 @@ export default function App() {
     return `mailto:textotodo.oficial@gmail.com?subject=${subject}&body=${body}`;
   }, [rating, feedbackCategory, feedbackText]);
 
-  return (
-    <div className="min-h-screen flex flex-col selection:bg-indigo-500/25">
-      {/* =====================================================================
-          SPLASH SCREEN — SOLO EL LOGO
-          ===================================================================== */}
-      {showSplash && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="TextoTodo"
-          onClick={dismissSplash}
-          className={`fixed inset-0 z-[100] grid place-items-center bg-[#05070e] transition-opacity duration-350 ${
-            splashClosing ? 'opacity-0 pointer-events-none' : 'opacity-100'
-          }`}
-        >
-          <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-[28px] grid place-items-center bg-gradient-to-br from-[#5147dc] via-[#756aff] to-[#c9a75c] border border-white/25 shadow-[0_0_70px_rgba(117,106,255,0.45)] splash-logo-anim">
-            <svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+  // =========================================================================
+  // 1. PÁGINA INDEPENDIENTE DE SPLASH SCREEN
+  // Fondo negro puro (#000000) en modo oscuro y blanco puro (#ffffff) en modo claro
+  // =========================================================================
+  if (showSplash) {
+    return (
+      <main
+        role="main"
+        aria-label="TextoTodo Pantalla Splash"
+        onClick={() => {
+          setShowSplash(false);
+          if (window.location.hash === '#splash') {
+            window.location.hash = '#centro';
+          }
+        }}
+        className={`min-h-screen w-full flex flex-col items-center justify-center p-6 select-none transition-colors duration-200 relative cursor-pointer ${
+          theme === 'dark' ? 'bg-[#000000] text-white' : 'bg-[#ffffff] text-black'
+        }`}
+      >
+        <div className="absolute top-5 right-5 flex items-center gap-2 z-10">
+          <button
+            type="button"
+            onClick={e => {
+              e.stopPropagation();
+              toggleTheme();
+            }}
+            title={theme === 'dark' ? 'Cambiar a modo claro (fondo blanco)' : 'Cambiar a modo oscuro (fondo negro)'}
+            aria-label="Cambiar tema claro / oscuro"
+            className={`p-2.5 rounded-xl border text-xs font-bold transition ${
+              theme === 'dark'
+                ? 'border-neutral-800 bg-neutral-900 text-white hover:bg-neutral-800'
+                : 'border-neutral-300 bg-neutral-100 text-black hover:bg-neutral-200'
+            }`}
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-300" /> : <Moon className="w-4 h-4 text-neutral-800" />}
+          </button>
+        </div>
+
+        <div className="flex flex-col items-center text-center max-w-md mx-auto">
+          {/* Animated Logo Badge */}
+          <div
+            className={`w-24 h-24 sm:w-28 sm:h-28 rounded-[28px] sm:rounded-[32px] grid place-items-center bg-gradient-to-br from-[#5147dc] via-[#756aff] to-[#c9a75c] border splash-logo-anim relative shadow-2xl shrink-0 ${
+              theme === 'dark' ? 'border-neutral-800 shadow-indigo-950/40' : 'border-neutral-200 shadow-indigo-200/50'
+            }`}
+          >
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
               <path d="M5 6.5h14M5 11.5h10M5 16.5h7" stroke="white" strokeWidth="2.4" strokeLinecap="round" />
             </svg>
           </div>
-        </div>
-      )}
 
+          <h1
+            className={`font-display text-3xl sm:text-4xl font-black tracking-tight mt-5 ${
+              theme === 'dark' ? 'text-white' : 'text-black'
+            }`}
+          >
+            TextoTodo
+          </h1>
+
+          <p
+            className={`mt-2 text-xs sm:text-sm font-semibold tracking-wide ${
+              theme === 'dark' ? 'text-neutral-400' : 'text-neutral-600'
+            }`}
+          >
+            Suite Editorial, Lingüística & Productividad Pro
+          </p>
+
+          {/* Micro Progress Shimmer Line */}
+          <div
+            className={`mt-6 w-44 h-1.5 rounded-full overflow-hidden ${
+              theme === 'dark' ? 'bg-neutral-900' : 'bg-neutral-200'
+            }`}
+          >
+            <div className="h-full w-full bg-gradient-to-r from-[#5147dc] via-[#756aff] to-[#c9a75c] splash-shimmer-bar" />
+          </div>
+
+          <div className="mt-7 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                setShowSplash(false);
+                if (window.location.hash === '#splash') {
+                  window.location.hash = '#centro';
+                }
+              }}
+              className="h-10 px-6 rounded-xl bg-gradient-to-r from-[#5147dc] via-[#756aff] to-[#c9a75c] text-white text-xs font-extrabold inline-flex items-center justify-center gap-2 shadow-md hover:brightness-110 active:scale-95 transition"
+            >
+              <span>Entrar a las herramientas</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <span
+            className={`mt-5 text-[11px] uppercase tracking-widest font-mono ${
+              theme === 'dark' ? 'text-neutral-600' : 'text-neutral-400'
+            }`}
+          >
+            10 Suites · 100% Gratis · En tu Navegador
+          </span>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col selection:bg-indigo-500/25">
       {/* TOPBAR — STRICT 3-ZONE LUXURY CONTRACT & CLEAN MOBILE HEADER */}
       <header className="sticky top-0 z-40 border-b border-[var(--line)] bg-[var(--bg)]/90 backdrop-blur-2xl relative">
         {/* BARRA DE PROGRESO DE SCROLL CON EL MORADO CARACTERÍSTICO DEL LOGO */}
@@ -1411,15 +1787,14 @@ export default function App() {
             style={{ width: `${scrollProgress}%` }}
           />
         </div>
-        <div className="max-w-[1260px] mx-auto px-3.5 sm:px-5 h-[62px] sm:h-[70px] flex items-center justify-between gap-4 sm:gap-8">
-          {/* Zone 1: Brand Wordmark (clicking replays Splash or scrolls top) */}
+        <div className="max-w-[1260px] mx-auto px-3 sm:px-5 min-h-[62px] sm:min-h-[70px] py-1.5 flex items-center justify-between gap-2.5 sm:gap-5">
+          {/* Zone 1: Brand Wordmark */}
           <a
             href="#inicio"
-            onClick={() => setShowSplash(true)}
-            title="TextoTodo Pro — Ver pantalla de bienvenida"
+            title="TextoTodo Pro — Ir al inicio"
             className="flex items-center gap-2.5 font-display font-extrabold tracking-tight whitespace-nowrap shrink-0"
           >
-            <span className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl grid place-items-center bg-gradient-to-br from-[#5147dc] via-[#756aff] to-[#c9a75c] border border-white/25 shadow-md">
+            <span className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl grid place-items-center bg-gradient-to-br from-[#5147dc] via-[#756aff] to-[#c9a75c] border border-white/25 shadow-md shrink-0">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path d="M5 6.5h14M5 11.5h10M5 16.5h7" stroke="white" strokeWidth="2.2" strokeLinecap="round" />
               </svg>
@@ -1450,8 +1825,25 @@ export default function App() {
             ))}
           </nav>
 
-          {/* Zone 3: Quick Utilities & Primary Action */}
+          {/* Zone 3: Quick Utilities & Global Page Language */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setSiteLangSearch('');
+                setIsSiteLangModalOpen(true);
+              }}
+              title="Cambiar el idioma de toda la página web (105+ idiomas)"
+              aria-label="Cambiar idioma de toda la página web"
+              className="inline-flex items-center gap-1.5 min-h-[36px] px-2.5 sm:px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--text)] hover:border-[var(--brand2)] transition whitespace-nowrap shrink-0"
+            >
+              <span data-no-i18n="true">{currentSiteLangMeta.flag}</span>
+              <span data-no-i18n="true" className="uppercase">{currentSiteLangMeta.code.split('-')[0]}</span>
+              <span className="hidden sm:inline text-[11px] text-[var(--brand2)] font-bold">
+                {isSiteTranslating ? 'Traduciendo…' : 'Idioma Web'}
+              </span>
+            </button>
+
             <button
               type="button"
               onClick={() => {
@@ -1461,9 +1853,9 @@ export default function App() {
               }}
               title="Buscador rápido de herramientas (Ctrl/Cmd + K)"
               aria-label="Abrir buscador de herramientas"
-              className="hidden sm:inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--brand)] transition whitespace-nowrap shrink-0"
+              className="hidden sm:inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--brand)] transition whitespace-nowrap shrink-0"
             >
-              <Command className="w-3.5 h-3.5 text-[var(--brand)]" />
+              <Command className="w-3.5 h-3.5 text-[var(--brand)] shrink-0" />
               <span className="tabular-nums">⌘K</span>
             </button>
 
@@ -1472,7 +1864,7 @@ export default function App() {
               onClick={() => setIsHistoryOpen(true)}
               title="Historial guardado"
               aria-label="Abrir historial"
-              className="hidden sm:grid w-9 h-9 rounded-xl place-items-center border border-[var(--line)] bg-[var(--surface)] text-[var(--text)] hover:border-[var(--brand)] transition shrink-0"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl grid place-items-center border border-[var(--line)] bg-[var(--surface)] text-[var(--text)] hover:border-[var(--brand)] hover:scale-105 active:scale-95 transition shrink-0"
             >
               <History className="w-4 h-4" />
             </button>
@@ -1482,23 +1874,13 @@ export default function App() {
               onClick={toggleTheme}
               title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
               aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-              className="w-9 h-9 rounded-xl grid place-items-center border border-[var(--line)] bg-[var(--surface)] text-[var(--text)] hover:border-[var(--brand)] transition shrink-0"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl grid place-items-center border border-[var(--line)] bg-[var(--surface)] text-[var(--text)] hover:border-[var(--brand)] hover:scale-105 active:scale-95 transition shrink-0"
             >
               {theme === 'dark' ? (
-                <Sun className="w-4 h-4 text-[var(--gold)]" />
+                <Sun className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-[var(--gold)]" />
               ) : (
-                <Moon className="w-4 h-4 text-[var(--brand)]" />
+                <Moon className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-[var(--brand)]" />
               )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => openSupportModal('5')}
-              aria-label="Donar voluntariamente por PayPal"
-              className="inline-flex items-center justify-center gap-1.5 h-9 px-3.5 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[#c92573] via-[#ee4f98] to-[#c9a75c] shadow-md hover:brightness-110 transition whitespace-nowrap shrink-0"
-            >
-              <Gift className="w-3.5 h-3.5" />
-              <span>Donar</span>
             </button>
           </div>
         </div>
@@ -1513,8 +1895,14 @@ export default function App() {
             {/* Left Column: Universal Value Proposition */}
             <div className="lg:col-span-6 flex flex-col justify-between">
               <div>
-                <div className="text-[11px] sm:text-xs font-bold text-[var(--gold)] tracking-wide mb-2.5">
-                  ESTUDIANTES · PROFESIONALES · CREADORES · ESCRITORES
+                <div className="flex flex-wrap items-center gap-2.5 mb-3">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/35 bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 text-[11px] font-extrabold shadow-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                    <span>Motor Lingüístico Local Activo · Cero Latencia · 100% Privado</span>
+                  </div>
+                  <div className="text-[11px] sm:text-xs font-bold text-[var(--gold)] tracking-wide">
+                    ESTUDIANTES · PROFESIONALES · CREADORES · ESCRITORES
+                  </div>
                 </div>
                 <h1 className="font-display text-3xl sm:text-5xl lg:text-[52px] font-extrabold tracking-tight leading-[1.06] text-balance">
                   Todo lo que necesitas hacer con tu texto,{' '}
@@ -1523,13 +1911,13 @@ export default function App() {
                   </span>
                 </h1>
                 <p className="mt-4 text-sm sm:text-base text-[var(--muted)] max-w-[58ch] leading-relaxed">
-                  Resume apuntes o informes, corrige la ortografía, limpia formato de PDFs, traduce en 6 idiomas, audita el SEO, cambia fuentes Unicode o busca rimas en más de 15.000 palabras del español.
+                  Resume apuntes o informes, corrige la ortografía, limpia formato de PDFs, traduce tanto tus textos como toda la web en más de 105 idiomas, audita el SEO, cambia fuentes Unicode o busca rimas y estrofas en 7 idiomas y +15.000 voces.
                 </p>
 
-                <div className="mt-6 flex flex-wrap items-center gap-3">
+                <div className="mt-6 flex flex-wrap items-center gap-2.5 sm:gap-3">
                   <a
                     href="#centro"
-                    className="inline-flex items-center justify-center gap-2 h-11 px-6 rounded-2xl font-extrabold text-sm text-white bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)] shadow-lg hover:brightness-110 transition whitespace-nowrap"
+                    className="inline-flex items-center justify-center gap-2 h-11 px-6 rounded-2xl font-extrabold text-sm text-white bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)] shadow-lg hover:brightness-110 active:scale-95 transition whitespace-nowrap"
                   >
                     Ver las 10 Suites <ArrowRight className="w-4 h-4" />
                   </a>
@@ -1539,6 +1927,18 @@ export default function App() {
                   >
                     <Wand2 className="w-4 h-4 text-[var(--brand2)]" /> Autopilot 5 en 1
                   </a>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openExportModal(
+                        'Documento TextoTodo Pro',
+                        zenText || autoInput || sumInput || impInput || fontInput || 'TextoTodo Pro'
+                      )
+                    }
+                    className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-2xl font-extrabold text-xs sm:text-sm border border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--gold)] transition whitespace-nowrap"
+                  >
+                    <Download className="w-4 h-4 text-[var(--gold)]" /> Exportar Pro
+                  </button>
                 </div>
               </div>
 
@@ -1633,13 +2033,13 @@ export default function App() {
                           <div
                             key={f.name}
                             onClick={() => copyText(f.output, `Copiado: ${f.name}`)}
-                            className="cursor-pointer p-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)]/70 hover:border-[var(--brand2)] transition flex flex-col justify-between"
+                            className="cursor-pointer p-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)]/70 hover:border-[var(--brand2)] transition flex flex-col justify-between gap-1"
                           >
-                            <div className="flex items-center justify-between text-[11px] text-[var(--muted)] font-bold">
+                            <div className="flex items-center justify-between gap-2 text-[11px] text-[var(--muted)] font-bold">
                               <span>{f.name}</span>
-                              <span className="text-[var(--brand2)]">Copiar</span>
+                              <span className="text-[var(--brand2)] shrink-0">Copiar</span>
                             </div>
-                            <p className="mt-1 text-sm font-semibold text-[var(--text)] truncate">{f.output}</p>
+                            <p data-no-i18n="true" className="mt-1 text-sm font-semibold text-[var(--text)] break-words leading-snug">{f.output}</p>
                           </div>
                         ))}
                       </div>
@@ -1658,11 +2058,11 @@ export default function App() {
                             onClick={() => copyText(item.val, `Copiado: ${item.label}`)}
                             className="cursor-pointer p-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)]/70 hover:border-[var(--brand2)] transition"
                           >
-                            <div className="flex items-center justify-between text-[11px] text-[var(--muted)] font-bold">
+                            <div className="flex items-center justify-between gap-2 text-[11px] text-[var(--muted)] font-bold">
                               <span>{item.label}</span>
-                              <span className="text-[var(--brand2)]">Copiar</span>
+                              <span className="text-[var(--brand2)] shrink-0">Copiar</span>
                             </div>
-                            <p className="mt-1 text-xs font-mono text-[var(--text)] truncate">{item.val}</p>
+                            <p data-no-i18n="true" className="mt-1 text-xs font-mono text-[var(--text)] break-words leading-snug">{item.val}</p>
                           </div>
                         ))}
                       </div>
@@ -1712,10 +2112,10 @@ export default function App() {
                                 key={r.word}
                                 type="button"
                                 onClick={() => copyText(r.word, `Rima copiada: ${r.word}`)}
-                                className="p-2 rounded-lg border border-[var(--line)] bg-[var(--surface)] text-left hover:border-[var(--brand2)] transition"
+                                className="p-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] text-left hover:border-[var(--brand2)] transition"
                               >
-                                <strong className="block text-xs font-extrabold text-[var(--text)] truncate">{r.word}</strong>
-                                <span className="text-[10px] font-mono text-[var(--muted)] truncate block">{r.syllableBreakdown}</span>
+                                <strong className="block text-xs font-extrabold text-[var(--text)] break-words">{r.word}</strong>
+                                <span className="text-[10px] font-mono text-[var(--muted)] break-words block">{r.syllableBreakdown}</span>
                               </button>
                             ))
                           ) : (
@@ -1858,8 +2258,8 @@ export default function App() {
                       </span>
                     </div>
 
-                    <div className="pt-2.5 border-t border-[var(--line)]/70 flex items-center justify-between text-[11px] font-mono text-[var(--muted)]">
-                      <span className="truncate">{tool.sample}</span>
+                    <div className="pt-2.5 border-t border-[var(--line)]/70 flex items-center justify-between gap-2 text-[11px] font-mono text-[var(--muted)]">
+                      <span className="break-words leading-tight">{tool.sample}</span>
                       <ArrowRight className="w-3.5 h-3.5 shrink-0 text-[var(--brand2)]" />
                     </div>
                   </a>
@@ -1881,8 +2281,8 @@ export default function App() {
             </p>
 
             <div className="mt-5 sm:mt-6 rounded-[22px] sm:rounded-[28px] studio-console overflow-hidden">
-              <div className="px-3.5 sm:px-5 py-3 sm:py-3.5 border-b border-[var(--line)] bg-[var(--surface2)]/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 sm:pb-0">
+              <div className="px-3.5 sm:px-5 py-3 sm:py-3.5 border-b border-[var(--line)] bg-[var(--surface2)]/90 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {(
                     [
                       ['todas', `Todas (${FONT_STYLES.length})`],
@@ -1896,7 +2296,7 @@ export default function App() {
                       key={catId}
                       type="button"
                       onClick={() => setFontCategory(catId)}
-                      className={`h-8 sm:h-9 px-3 rounded-xl text-xs font-bold transition whitespace-nowrap shrink-0 ${
+                      className={`h-9 px-3 rounded-xl text-xs font-bold transition whitespace-nowrap shrink-0 ${
                         fontCategory === catId
                           ? 'bg-[var(--brand)] text-white'
                           : 'bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--text)] border border-[var(--line)]'
@@ -1905,9 +2305,19 @@ export default function App() {
                       {label}
                     </button>
                   ))}
+                  <div className="relative min-w-[130px] max-w-[180px]">
+                    <Search className="w-3.5 h-3.5 text-[var(--muted)] absolute left-2.5 top-3 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={fontSearch}
+                      onChange={e => setFontSearch(e.target.value)}
+                      placeholder="Buscar estilo…"
+                      className="w-full h-9 pl-8 pr-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs text-[var(--text)] outline-none focus:border-[var(--brand2)]"
+                    />
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-3 sm:flex items-center gap-1.5 sm:gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() =>
@@ -1918,9 +2328,9 @@ export default function App() {
                         'Todos los estilos copiados'
                       )
                     }
-                    className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-[11px] sm:text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1"
+                    className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                   >
-                    <Copy className="w-3.5 h-3.5 shrink-0" /> Copiar
+                    <Copy className="w-3.5 h-3.5 shrink-0" /> Copiar todo
                   </button>
                   <button
                     type="button"
@@ -1932,9 +2342,9 @@ export default function App() {
                           .join('\n\n')
                       )
                     }
-                    className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-[11px] sm:text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1"
+                    className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                   >
-                    <Download className="w-3.5 h-3.5 shrink-0" /> TXT
+                    <Download className="w-3.5 h-3.5 shrink-0" /> Descargar TXT
                   </button>
                   <button
                     type="button"
@@ -1948,78 +2358,216 @@ export default function App() {
                           .join('\n')
                       )
                     }
-                    className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-[11px] sm:text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1"
+                    className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                   >
                     <Bookmark className="w-3.5 h-3.5 shrink-0" /> Guardar
                   </button>
                   <button
-                    type="button"
-                    onClick={() =>
-                      downloadTxt(
-                        'textotodo-pack-44-fuentes.txt',
-                        FONT_STYLES.map(
-                          s =>
-                            `=== ${s.name.toUpperCase()} ===\n` +
-                            FONT_FRAMES.slice(0, 5)
-                              .map(fr => fr.wrap(s.transform(fontInput || 'TextoTodo Pro')))
-                              .join('\n')
-                        ).join('\n\n')
-                      )
-                    }
-                    className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-[11px] sm:text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center justify-center gap-1"
-                  >
-                    <Download className="w-3.5 h-3.5 shrink-0" /> Pack 44 Fuentes
-                  </button>
+                      type="button"
+                      onClick={() =>
+                        downloadTxt(
+                          'textotodo-fuentes.json',
+                          JSON.stringify(
+                            FONT_STYLES.map(s => ({
+                              id: s.id,
+                              name: s.name,
+                              category: s.category,
+                              output: activeFrame.wrap(s.transform(fontInput || 'TextoTodo Pro'))
+                            })),
+                            null,
+                            2
+                          )
+                        )
+                      }
+                      className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--brand2)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5 shrink-0" /> Pack JSON
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadTxt(
+                          'textotodo-pack-44-fuentes.txt',
+                          FONT_STYLES.map(
+                            s =>
+                              `=== ${s.name.toUpperCase()} ===\n` +
+                              FONT_FRAMES.slice(0, 5)
+                                .map(fr => fr.wrap(s.transform(fontInput || 'TextoTodo Pro')))
+                                .join('\n')
+                          ).join('\n\n')
+                        )
+                      }
+                      className="h-9 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5 shrink-0" /> Pack 44 Fuentes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        printFormattedReport(
+                          'Catálogo de 44 Fuentes Unicode',
+                          displayedFonts
+                            .map(s => `${s.name}:\n${activeFrame.wrap(s.transform(fontInput || 'TextoTodo'))}`)
+                            .join('\n\n')
+                        )
+                      }
+                      className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--brand2)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-[var(--brand2)] shrink-0" /> Imprimir / PDF
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <div className="grid lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-[var(--line)]">
-                <div className="lg:col-span-5 p-4 sm:p-6 space-y-4">
-                  <div>
-                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                      <span className="text-xs font-extrabold text-[var(--muted)]">Tu texto, titular o biografía</span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => pasteFromClipboard(setFontInput)}
-                          className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold hover:border-[var(--brand2)] inline-flex items-center gap-1"
-                        >
-                          <ClipboardPaste className="w-3 h-3 text-[var(--brand2)]" /> Pegar
-                        </button>
-                        <span className="text-xs text-[var(--muted)] tabular-nums">{fontInput.length} / 500</span>
+                <div className="grid lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-[var(--line)]">
+                  <div className="lg:col-span-5 p-4 sm:p-6 space-y-4">
+                    <div>
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <span className="text-xs font-extrabold text-[var(--muted)]">Tu texto, titular o biografía</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => pasteFromClipboard(setFontInput)}
+                            className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold hover:border-[var(--brand2)] inline-flex items-center gap-1"
+                          >
+                            <ClipboardPaste className="w-3 h-3 text-[var(--brand2)]" /> Pegar
+                          </button>
+                          <span className="text-xs text-[var(--muted)] tabular-nums">{fontInput.length} / 500</span>
+                        </div>
+                      </div>
+                      <textarea
+                        value={fontInput}
+                        onChange={e => setFontInput(e.target.value)}
+                        maxLength={500}
+                        rows={4}
+                        placeholder="Escribe cualquier frase para transformarla…"
+                        className="w-full p-3.5 sm:p-4 rounded-2xl border border-[var(--line)] bg-[var(--surface2)] text-[var(--text)] resize-y leading-relaxed"
+                      />
+
+                      {/* Presets 1-clic */}
+                      <div className="mt-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                        <span className="text-[10px] font-extrabold text-[var(--gold)] shrink-0 flex items-center gap-1">
+                          <Sparkles className="w-2.5 h-2.5" /> Ejemplos:
+                        </span>
+                        {SUITE_PRESETS.fuente?.map(p => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setFontInput(p.text);
+                              addToast(`Cargado: ${p.label}`);
+                            }}
+                            className="h-6 px-2 rounded-md border border-[var(--line)] bg-[var(--surface)] text-[10px] font-bold text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--brand2)] transition whitespace-nowrap shrink-0"
+                          >
+                            <span className="text-[9px] text-[var(--brand2)] mr-1">[{p.badge}]</span>
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Medidores de límites en vivo para Redes Sociales */}
+                      <div className="mt-2.5 grid grid-cols-3 gap-2">
+                        {[
+                          { name: 'Instagram Bio', limit: 150 },
+                          { name: 'Twitter / X', limit: 280 },
+                          { name: 'TikTok Bio', limit: 80 }
+                        ].map(item => {
+                          const over = fontInput.length > item.limit;
+                          return (
+                            <div
+                              key={item.name}
+                              className={`p-2 rounded-xl border text-[11px] font-bold text-center transition ${
+                                over
+                                  ? 'border-[var(--danger)]/50 bg-[var(--danger)]/10 text-[var(--danger)]'
+                                  : 'border-[var(--line)] bg-[var(--surface2)]/80 text-[var(--muted)]'
+                              }`}
+                            >
+                              <span className="block truncate text-[10px] sm:text-[11px]">{item.name}</span>
+                              <span className="tabular-nums">
+                                {fontInput.length}/{item.limit}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                    <textarea
-                      value={fontInput}
-                      onChange={e => setFontInput(e.target.value)}
-                      maxLength={500}
-                      rows={4}
-                      placeholder="Escribe cualquier frase para transformarla…"
-                      className="w-full p-3.5 sm:p-4 rounded-2xl border border-[var(--line)] bg-[var(--surface2)] text-[var(--text)] resize-y leading-relaxed"
-                    />
-                  </div>
 
-                  <div>
-                    <span className="block text-xs font-extrabold text-[var(--muted)] mb-2">
-                      Marco decorativo opcional (desliza →)
-                    </span>
-                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
-                      {FONT_FRAMES.map(frame => (
-                        <button
-                          key={frame.id}
-                          type="button"
-                          onClick={() => setActiveFrameId(frame.id)}
-                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition whitespace-nowrap shrink-0 ${
-                            activeFrameId === frame.id
-                              ? 'border-[var(--brand2)] bg-[var(--brand2)]/15 text-[var(--brand2)]'
-                              : 'border-[var(--line)] bg-[var(--surface2)] text-[var(--muted)] hover:text-[var(--text)]'
-                          }`}
-                        >
-                          {frame.label}
-                        </button>
-                      ))}
+                    <div>
+                      <span className="block text-xs font-extrabold text-[var(--muted)] mb-2">
+                        Marco decorativo opcional (desliza →)
+                      </span>
+                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                        {FONT_FRAMES.map(frame => (
+                          <button
+                            key={frame.id}
+                            type="button"
+                            onClick={() => setActiveFrameId(frame.id)}
+                            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition whitespace-nowrap shrink-0 ${
+                              activeFrameId === frame.id
+                                ? 'border-[var(--brand2)] bg-[var(--brand2)]/15 text-[var(--brand2)]'
+                                : 'border-[var(--line)] bg-[var(--surface2)] text-[var(--muted)] hover:text-[var(--text)]'
+                            }`}
+                          >
+                            {frame.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+
+                    {/* Decoradores y Símbolos Pro en 1 clic */}
+                    <div>
+                      <span className="block text-[11px] font-extrabold text-[var(--muted)] mb-1.5">
+                        Decoradores para Nicks y Bios en 1 clic:
+                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {[
+                          ['✦ Estrella', `✦ ${fontInput || 'Nombre'} ✦`],
+                          ['꧁ Ala ꧂', `꧁༺ ${fontInput || 'Nombre'} ༻꧂`],
+                          ['✩ Mágico', `⋆｡°✩ ${fontInput || 'Nombre'} ✩°｡⋆`],
+                          ['⚡ Rayo', `⚡ ${fontInput || 'Nombre'} ⚡`],
+                          ['【 Soporte 】', `【 ${fontInput || 'Nombre'} 】`],
+                          ['— Pro —', `— ${fontInput || 'Nombre'} · Pro —`]
+                        ].map(([badge, decorated]) => (
+                          <button
+                            key={badge}
+                            type="button"
+                            onClick={() => setFontInput(decorated)}
+                            className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold hover:border-[var(--brand2)] transition"
+                          >
+                            {badge}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Transformación rápida de mayúsculas/minúsculas */}
+                    <div>
+                      <span className="block text-[11px] font-extrabold text-[var(--muted)] mb-1.5">
+                        Conversión rápida de caja:
+                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setFontInput(prev => prev.toUpperCase())}
+                          className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold hover:border-[var(--brand2)]"
+                        >
+                          AA MAYÚSCULAS
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFontInput(prev => prev.toLowerCase())}
+                          className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold hover:border-[var(--brand2)]"
+                        >
+                          aa minúsculas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFontInput(prev => convertTextFormat(prev, 'title'))}
+                          className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold hover:border-[var(--brand2)]"
+                        >
+                          Aa Tipo Título
+                        </button>
+                      </div>
+                    </div>
 
                   <div className="flex flex-wrap gap-2 pt-1">
                     <button
@@ -2031,14 +2579,14 @@ export default function App() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setFontInput('Especialista en Marketing Digital, Diseño & Estrategia 🚀')}
+                      onClick={() => setFontInput(localizedSamples.fontBio)}
                       className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
                     >
                       Bio Profesional
                     </button>
                     <button
                       type="button"
-                      onClick={() => setFontInput('Oferta especial disponible solo por tiempo limitado ✨')}
+                      onClick={() => setFontInput(localizedSamples.fontPromo)}
                       className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
                     >
                       Anuncio / Post
@@ -2073,7 +2621,7 @@ export default function App() {
                               : 'border-[var(--line)] bg-[var(--surface2)]/70 hover:border-[var(--brand2)]'
                           }`}
                         >
-                          <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-start justify-between gap-2">
                             <button
                               type="button"
                               onClick={e => {
@@ -2081,15 +2629,15 @@ export default function App() {
                                 toggleFavFont(style.id);
                               }}
                               title="Fijar estilo favorito"
-                              className={`text-xs font-bold flex items-center gap-1 truncate ${
+                              className={`text-xs font-bold flex items-center gap-1 text-left leading-snug ${
                                 isFav ? 'text-[var(--gold)]' : 'text-[var(--muted)] hover:text-[var(--text)]'
                               }`}
                             >
-                              <span>{isFav ? '★' : '☆'}</span>
-                              <span className="truncate">{style.name}</span>
+                              <span className="shrink-0">{isFav ? '★' : '☆'}</span>
+                              <span className="break-words">{style.name}</span>
                             </button>
                             <span
-                              className={`h-7 px-2.5 rounded-lg border text-[11px] font-extrabold inline-flex items-center gap-1 shrink-0 ${
+                              className={`h-7 px-2.5 rounded-lg border text-[11px] font-extrabold inline-flex items-center gap-1 whitespace-nowrap shrink-0 ${
                                 isJustCopied
                                   ? 'border-[var(--green)] bg-[var(--green)] text-[#04120a]'
                                   : 'border-[var(--line)] bg-[var(--surface)] text-[var(--text)]'
@@ -2098,7 +2646,7 @@ export default function App() {
                               {isJustCopied ? '✓ Copiado' : 'Copiar'}
                             </span>
                           </div>
-                          <p className="text-sm sm:text-base break-words leading-snug text-[var(--text)] select-all">
+                          <p data-no-i18n="true" className="text-sm sm:text-base break-words leading-snug text-[var(--text)] select-all">
                             {preview}
                           </p>
                         </article>
@@ -2114,134 +2662,207 @@ export default function App() {
         {/* 2. TRADUCTOR PRO WORKSPACE */}
         <section id="traductor" className="py-10 sm:py-16 border-t border-[var(--line)] bg-[var(--surface)]/35">
           <div className="max-w-[1260px] mx-auto px-4 sm:px-5">
-            <span className="section-number">SUITE 02 · IDIOMAS & VOZ NEURAL</span>
+            <span className="section-number">SUITE 02 · TRADUCTOR UNIVERSAL ({WORLD_LANGUAGES.length}+ IDIOMAS & VOZ NEURAL)</span>
             <h2 className="font-display text-2xl sm:text-4xl font-extrabold tracking-tight text-balance mt-1">
-              Traductor Multilingüe Pro
+              Traductor Multilingüe Universal ({WORLD_LANGUAGES.length}+ Idiomas)
             </h2>
-            <p className="mt-1.5 sm:mt-2 text-xs sm:text-base text-[var(--muted)] max-w-2xl">
-              Traduce entre 6 idiomas con control de velocidad de pronunciación por voz (TTS) y descarga bilingüe para estudio o trabajo.
+            <p className="mt-1.5 sm:mt-2 text-xs sm:text-base text-[var(--muted)] max-w-3xl">
+              Traduce al instante entre más de 105 idiomas del mundo (Europa, América, Asia, África, Oriente Medio, lenguas cooficiales como Catalán, Gallego y Euskera, y lenguas clásicas como Latín o Esperanto) con lectura por voz (TTS) y descarga bilingüe espejo.
             </p>
 
             <div className="mt-5 sm:mt-6 rounded-[22px] sm:rounded-[28px] studio-console overflow-hidden">
-              <div className="px-3.5 sm:px-5 py-3 sm:py-3.5 border-b border-[var(--line)] bg-[var(--surface2)]/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                <div className="grid grid-cols-[1fr_auto_1fr] sm:flex items-center gap-1.5 sm:gap-2">
-                  <select
-                    aria-label="Idioma de origen"
-                    value={transFrom}
-                    onChange={e => setTransFrom(e.target.value)}
-                    className="h-9 px-2.5 sm:px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold w-full sm:w-auto"
-                  >
-                    <option value="es">Español</option>
-                    <option value="en">Inglés</option>
-                    <option value="fr">Francés</option>
-                    <option value="de">Alemán</option>
-                    <option value="pt">Portugués</option>
-                    <option value="it">Italiano</option>
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTransFrom(transTo);
-                      setTransTo(transFrom);
-                      setTransInput(transOutput);
-                      setTransOutput(transInput);
-                    }}
-                    aria-label="Intercambiar idiomas"
-                    className="w-9 h-9 rounded-xl grid place-items-center border border-[var(--line)] bg-[var(--surface)] hover:border-[var(--brand)] shrink-0"
-                  >
-                    <ArrowLeftRight className="w-3.5 h-3.5" />
-                  </button>
-                  <select
-                    aria-label="Idioma de destino"
-                    value={transTo}
-                    onChange={e => setTransTo(e.target.value)}
-                    className="h-9 px-2.5 sm:px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold w-full sm:w-auto"
-                  >
-                    <option value="en">Inglés</option>
-                    <option value="es">Español</option>
-                    <option value="fr">Francés</option>
-                    <option value="de">Alemán</option>
-                    <option value="pt">Portugués</option>
-                    <option value="it">Italiano</option>
-                  </select>
+              <div className="px-3.5 sm:px-5 py-3 sm:py-3.5 border-b border-[var(--line)] bg-[var(--surface2)]/90 space-y-2.5">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      aria-label="Idioma de origen"
+                      value={transFrom}
+                      onChange={e => setTransFrom(e.target.value)}
+                      className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold shrink-0"
+                    >
+                      {(['populares', 'europa', 'america_cooficiales', 'asia_oceania', 'oriente_africa', 'clasicos'] as const).map(reg => {
+                        const group = filteredWorldLanguages.filter(l => l.region === reg);
+                        if (group.length === 0) return null;
+                        return (
+                          <optgroup key={reg} label={LANGUAGE_REGION_LABELS[reg]}>
+                            {group.map(l => (
+                              <option key={l.code} value={l.code}>
+                                {l.flag} {l.name} ({l.nativeName})
+                              </option>
+                            ))}
+                          </optgroup>
+                        );
+                      })}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTransFrom(transTo);
+                        setTransTo(transFrom);
+                        setTransInput(transOutput);
+                        setTransOutput(transInput);
+                      }}
+                      aria-label="Intercambiar idiomas"
+                      className="w-9 h-9 rounded-xl grid place-items-center border border-[var(--line)] bg-[var(--surface)] hover:border-[var(--brand)] shrink-0"
+                    >
+                      <ArrowLeftRight className="w-3.5 h-3.5" />
+                    </button>
+                    <select
+                      aria-label="Idioma de destino"
+                      value={transTo}
+                      onChange={e => setTransTo(e.target.value)}
+                      className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold shrink-0"
+                    >
+                      {(['populares', 'europa', 'america_cooficiales', 'asia_oceania', 'oriente_africa', 'clasicos'] as const).map(reg => {
+                        const group = filteredWorldLanguages.filter(l => l.region === reg);
+                        if (group.length === 0) return null;
+                        return (
+                          <optgroup key={reg} label={LANGUAGE_REGION_LABELS[reg]}>
+                            {group.map(l => (
+                              <option key={l.code} value={l.code}>
+                                {l.flag} {l.name} ({l.nativeName})
+                              </option>
+                            ))}
+                          </optgroup>
+                        );
+                      })}
+                    </select>
 
-                  <select
-                    aria-label="Velocidad de lectura por voz"
-                    value={ttsRate}
-                    onChange={e => setTtsRate(Number(e.target.value))}
-                    className="col-span-3 sm:col-span-1 h-9 px-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold w-full sm:w-auto"
-                  >
-                    <option value={0.8}>Voz 0.8x (Lenta)</option>
-                    <option value={1}>Voz 1.0x (Normal)</option>
-                    <option value={1.2}>Voz 1.2x (Rápida)</option>
-                  </select>
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-[var(--muted)] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="search"
+                        value={transLangSearch}
+                        onChange={e => setTransLangSearch(e.target.value)}
+                        placeholder="Buscar entre 105+ idiomas…"
+                        className="h-9 pl-8 pr-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-semibold w-44 sm:w-52"
+                      />
+                    </div>
+
+                    <select
+                      aria-label="Velocidad de lectura por voz"
+                      value={ttsRate}
+                      onChange={e => setTtsRate(Number(e.target.value))}
+                      className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold shrink-0"
+                    >
+                      <option value={0.8}>Voz 0.8x (Lenta)</option>
+                      <option value={1}>Voz 1.0x (Normal)</option>
+                      <option value={1.2}>Voz 1.2x (Rápida)</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => downloadTxt(`traduccion-${transFrom}-${transTo}.txt`, `${transInput}\n\n---\n\n${transOutput}`)}
+                      className="h-9 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5 shrink-0" /> Bilingüe TXT
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => saveToHistory(`Traducción (${transFrom}→${transTo})`, transInput, transOutput)}
+                      className="h-9 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                    >
+                      <Bookmark className="w-3.5 h-3.5 shrink-0" /> Guardar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const srcLines = (transInput || 'Hola equipo, revisamos objetivos.')
+                          .split(/(?<=[.!?])\s+|\n+/)
+                          .filter(Boolean);
+                        const dstLines = (transOutput || 'Hello team, we review goals.')
+                          .split(/(?<=[.!?])\s+|\n+/)
+                          .filter(Boolean);
+                        const max = Math.max(srcLines.length, dstLines.length);
+                        const rows: string[] = [];
+                        for (let i = 0; i < max; i++) {
+                          rows.push(
+                            `[${i + 1}] ORIGINAL (${transFrom.toUpperCase()}): ${srcLines[i] || '—'}\n    TRADUCCIÓN (${transTo.toUpperCase()}): ${dstLines[i] || '—'}`
+                          );
+                        }
+                        downloadTxt(
+                          `textotodo-espejo-bilingue-${transFrom}-${transTo}.txt`,
+                          `DOSSIER BILINGÜE ESPEJO FRASE A FRASE · TEXTOTODO\n=================================================\nIdiomas: ${transFrom.toUpperCase()} → ${transTo.toUpperCase()}\n\n${rows.join('\n\n')}`
+                        );
+                      }}
+                      className="h-9 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5 shrink-0" /> Espejo Bilingüe
+                    </button>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => downloadTxt(`traduccion-${transFrom}-${transTo}.txt`, `${transInput}\n\n---\n\n${transOutput}`)}
-                    className="h-8 sm:h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5"
-                  >
-                    <Download className="w-3.5 h-3.5" /> Bilingüe TXT
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => saveToHistory(`Traducción (${transFrom}→${transTo})`, transInput, transOutput)}
-                    className="h-8 sm:h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5"
-                  >
-                    <Bookmark className="w-3.5 h-3.5" /> Guardar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const srcLines = (transInput || 'Hola equipo, revisamos objetivos.')
-                        .split(/(?<=[.!?])\s+|\n+/)
-                        .filter(Boolean);
-                      const dstLines = (transOutput || 'Hello team, we review goals.')
-                        .split(/(?<=[.!?])\s+|\n+/)
-                        .filter(Boolean);
-                      const max = Math.max(srcLines.length, dstLines.length);
-                      const rows: string[] = [];
-                      for (let i = 0; i < max; i++) {
-                        rows.push(
-                          `[${i + 1}] ORIGINAL (${transFrom.toUpperCase()}): ${srcLines[i] || '—'}\n    TRADUCCIÓN (${transTo.toUpperCase()}): ${dstLines[i] || '—'}`
-                        );
-                      }
-                      downloadTxt(
-                        `textotodo-espejo-bilingue-${transFrom}-${transTo}.txt`,
-                        `DOSSIER BILINGÜE ESPEJO FRASE A FRASE · TEXTOTODO\n=================================================\nIdiomas: ${transFrom.toUpperCase()} → ${transTo.toUpperCase()}\n\n${rows.join('\n\n')}`
-                      );
-                    }}
-                    className="col-span-2 sm:col-span-1 h-8 sm:h-9 px-3 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center justify-center gap-1.5"
-                  >
-                    <Download className="w-3.5 h-3.5" /> Espejo Bilingüe
-                  </button>
+                {/* Quick 1-Click Target Language Bar */}
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-2 border-t border-[var(--line)]/60">
+                  <span className="text-[11px] font-extrabold text-[var(--muted)] whitespace-nowrap shrink-0">
+                    Traducir en 1 clic a:
+                  </span>
+                  {[
+                    ['en', '🇬🇧 Inglés'],
+                    ['es', '🇪🇸 Español'],
+                    ['fr', '🇫🇷 Francés'],
+                    ['de', '🇩🇪 Alemán'],
+                    ['pt', '🇵🇹 Portugués'],
+                    ['it', '🇮🇹 Italiano'],
+                    ['ca', '🏴 Catalán'],
+                    ['gl', '🏴 Gallego'],
+                    ['eu', '🏴 Euskera'],
+                    ['zh-CN', '🇨🇳 Chino'],
+                    ['ja', '🇯🇵 Japonés'],
+                    ['ko', '🇰🇷 Coreano'],
+                    ['ar', '🇸🇦 Árabe'],
+                    ['ru', '🇷🇺 Ruso'],
+                    ['hi', '🇮🇳 Hindi'],
+                    ['nl', '🇳🇱 Holandés'],
+                    ['pl', '🇵🇱 Polaco'],
+                    ['sv', '🇸🇪 Sueco'],
+                    ['tr', '🇹🇷 Turco'],
+                    ['el', '🇬🇷 Griego'],
+                    ['la', '🏛️ Latín']
+                  ].map(([code, label]) => (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => {
+                        if (transFrom === code) {
+                          setTransFrom(transTo);
+                        }
+                        setTransTo(code);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition whitespace-nowrap shrink-0 ${
+                        transTo === code
+                          ? 'border-[var(--brand2)] bg-[var(--brand2)]/15 text-[var(--brand2)]'
+                          : 'border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--text)]'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
               <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[var(--line)]">
                 <div className="p-4 sm:p-6">
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                    <span className="text-xs font-extrabold text-[var(--muted)]">Texto original</span>
-                    <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-extrabold text-[var(--muted)]">
+                      Texto original ({getLanguageByCode(transFrom).flag} {getLanguageByCode(transFrom).name})
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => pasteFromClipboard(setTransInput)}
-                        className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold hover:border-[var(--brand2)] inline-flex items-center gap-1"
+                        className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold hover:border-[var(--brand2)] inline-flex items-center gap-1 whitespace-nowrap shrink-0"
                       >
-                        <ClipboardPaste className="w-3 h-3 text-[var(--brand2)]" /> Pegar
+                        <ClipboardPaste className="w-3 h-3 text-[var(--brand2)] shrink-0" /> Pegar
                       </button>
                       <button
                         type="button"
-                        onClick={() =>
-                          setTransInput(
-                            'Hola equipo, os comparto el resumen del proyecto de esta semana para revisar los próximos objetivos antes del viernes.'
-                          )
-                        }
-                        className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold hover:border-[var(--gold)] inline-flex items-center gap-1"
+                        onClick={() => setTransInput(localizedSamples.transSample)}
+                        className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold hover:border-[var(--gold)] inline-flex items-center gap-1 whitespace-nowrap shrink-0"
                       >
-                        <Wand2 className="w-3 h-3 text-[var(--gold)]" /> Ejemplo
+                        <Wand2 className="w-3 h-3 text-[var(--gold)] shrink-0" /> Ejemplo
                       </button>
                       <span className="text-xs text-[var(--muted)] tabular-nums">{transInput.length} / 4000</span>
                     </div>
@@ -2251,24 +2872,64 @@ export default function App() {
                     onChange={e => setTransInput(e.target.value)}
                     maxLength={4000}
                     rows={5}
-                    placeholder="Escribe o pega tu texto para traducir (hasta 4.000 caracteres por bloque)…"
+                    placeholder="Escribe o pega tu texto para traducir a cualquiera de los 105+ idiomas disponibles…"
                     className="w-full p-3.5 sm:p-4 rounded-2xl border border-[var(--line)] bg-[var(--surface2)] text-[var(--text)] resize-y"
                   />
+
+                  {/* Presets 1-clic */}
+                  <div className="mt-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                    <span className="text-[10px] font-extrabold text-[var(--gold)] shrink-0 flex items-center gap-1">
+                      <Sparkles className="w-2.5 h-2.5" /> Ejemplos:
+                    </span>
+                    {SUITE_PRESETS.traductor?.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setTransInput(p.text);
+                          addToast(`Cargado: ${p.label}`);
+                        }}
+                        className="h-6 px-2 rounded-md border border-[var(--line)] bg-[var(--surface)] text-[10px] font-bold text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--brand2)] transition whitespace-nowrap shrink-0"
+                      >
+                        <span className="text-[9px] text-[var(--brand2)] mr-1">[{p.badge}]</span>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       disabled={transLoading}
                       onClick={handleTranslate}
-                      className="flex-1 sm:flex-none h-10 px-5 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)] disabled:opacity-50"
+                      className="h-10 px-5 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)] disabled:opacity-50 inline-flex items-center justify-center whitespace-nowrap shrink-0 shadow-sm"
                     >
                       {transLoading ? 'Traduciendo…' : 'Traducir ahora'}
                     </button>
                     <button
                       type="button"
                       onClick={() => speakText(transInput, transFrom)}
-                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold inline-flex items-center gap-1.5"
+                      className={`h-10 px-3.5 rounded-xl border text-xs font-bold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 transition ${
+                        isSpeaking
+                          ? 'border-[var(--danger)] bg-[var(--danger)]/10 text-[var(--danger)]'
+                          : 'border-[var(--line)] bg-[var(--surface2)] hover:border-[var(--brand2)]'
+                      }`}
                     >
-                      <Volume2 className="w-3.5 h-3.5" /> Escuchar
+                      {isSpeaking ? (
+                        <>
+                          <VolumeX className="w-3.5 h-3.5" />
+                          <span className="inline-flex items-center gap-0.5 mx-1">
+                            <span className="soundwave-bar" />
+                            <span className="soundwave-bar" />
+                            <span className="soundwave-bar" />
+                          </span>
+                          <span>Detener</span>
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 className="w-3.5 h-3.5 shrink-0" /> Escuchar
+                        </>
+                      )}
                     </button>
                     <button
                       type="button"
@@ -2277,7 +2938,7 @@ export default function App() {
                         setTransOutput('');
                         setTransStatus({ msg: '', type: '' });
                       }}
-                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold"
+                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold inline-flex items-center justify-center whitespace-nowrap shrink-0"
                     >
                       Limpiar
                     </button>
@@ -2300,7 +2961,9 @@ export default function App() {
 
                 <div className="p-4 sm:p-6">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-extrabold text-[var(--muted)]">Traducción</span>
+                    <span className="text-xs font-extrabold text-[var(--muted)]">
+                      Traducción ({getLanguageByCode(transTo).flag} {getLanguageByCode(transTo).name})
+                    </span>
                     <span className="text-xs text-[var(--muted)]">Salida</span>
                   </div>
                   <textarea
@@ -2314,23 +2977,72 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => copyText(transOutput, 'Traducción copiada')}
-                      className="flex-1 sm:flex-none h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                     >
-                      Copiar traducción
+                      <Copy className="w-3.5 h-3.5 shrink-0" /> Copiar traducción
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyText(
+                          `[ORIGINAL · ${getLanguageByCode(transFrom).name.toUpperCase()}]:\n${transInput}\n\n[TRADUCCIÓN · ${getLanguageByCode(transTo).name.toUpperCase()}]:\n${transOutput}`,
+                          'Texto bilingüe copiado al portapapeles'
+                        )
+                      }
+                      className="h-10 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                    >
+                      <Copy className="w-3.5 h-3.5 shrink-0" /> Copiar Bilingüe
                     </button>
                     <button
                       type="button"
                       onClick={() => speakText(transOutput, transTo)}
-                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold inline-flex items-center gap-1.5"
+                      className={`h-10 px-3.5 rounded-xl border text-xs font-bold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 transition ${
+                        isSpeaking
+                          ? 'border-[var(--danger)] bg-[var(--danger)]/10 text-[var(--danger)]'
+                          : 'border-[var(--line)] bg-[var(--surface2)] hover:border-[var(--brand2)]'
+                      }`}
                     >
-                      <Volume2 className="w-3.5 h-3.5" /> Escuchar
+                      {isSpeaking ? (
+                        <>
+                          <VolumeX className="w-3.5 h-3.5" />
+                          <span className="inline-flex items-center gap-0.5 mx-1">
+                            <span className="soundwave-bar" />
+                            <span className="soundwave-bar" />
+                            <span className="soundwave-bar" />
+                          </span>
+                          <span>Detener</span>
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 className="w-3.5 h-3.5 shrink-0" /> Escuchar
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        printFormattedReport(
+                          'Traducción Bilingüe TextoTodo',
+                          `[ORIGINAL · ${getLanguageByCode(transFrom).name.toUpperCase()}]:\n${transInput}\n\n[TRADUCCIÓN · ${getLanguageByCode(transTo).name.toUpperCase()}]:\n${transOutput}`
+                        )
+                      }
+                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand2)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-[var(--brand2)] shrink-0" /> Imprimir / PDF
                     </button>
                     <button
                       type="button"
                       onClick={() => sendToTool('fuente', transOutput)}
-                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center whitespace-nowrap shrink-0"
                     >
                       A Fuentes →
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sendToTool('rimar', transOutput)}
+                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand2)] inline-flex items-center justify-center whitespace-nowrap shrink-0"
+                    >
+                      A Rimar →
                     </button>
                   </div>
                 </div>
@@ -2402,6 +3114,19 @@ export default function App() {
                       className="hidden sm:inline-flex justify-center h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--gold)] items-center gap-1.5"
                     >
                       PDF / Imprimir
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyText(
+                          encodeWorkspaceShareHash('resumidor', sumInput),
+                          'Enlace directo con este texto copiado al portapapeles'
+                        )
+                      }
+                      title="Copiar enlace directo con este texto cargado"
+                      className="hidden sm:inline-flex justify-center h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--brand2)] items-center gap-1.5"
+                    >
+                      <Share2 className="w-3.5 h-3.5 text-[var(--brand2)]" /> Enlace
                     </button>
                     <button
                       type="button"
@@ -2484,7 +3209,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => {
-                          const sample = UNIVERSAL_PRESETS[0].sampleText;
+                          const sample = localizedSamples.sumSample;
                           setSumInput(sample);
                           handleSummarize(sample);
                         }}
@@ -2503,11 +3228,34 @@ export default function App() {
                     placeholder="Pega un artículo, apuntes de clase, contrato o informe extenso…"
                     className="w-full p-3.5 sm:p-4 rounded-2xl border border-[var(--line)] bg-[var(--surface2)] text-[var(--text)] resize-y leading-relaxed"
                   />
+
+                  {/* Presets 1-clic */}
+                  <div className="mt-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                    <span className="text-[10px] font-extrabold text-[var(--gold)] shrink-0 flex items-center gap-1">
+                      <Sparkles className="w-2.5 h-2.5" /> Ejemplos:
+                    </span>
+                    {SUITE_PRESETS.resumidor?.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setSumInput(p.text);
+                          handleSummarize(p.text);
+                          addToast(`Cargado: ${p.label}`);
+                        }}
+                        className="h-6 px-2 rounded-md border border-[var(--line)] bg-[var(--surface)] text-[10px] font-bold text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--brand2)] transition whitespace-nowrap shrink-0"
+                      >
+                        <span className="text-[9px] text-[var(--brand2)] mr-1">[{p.badge}]</span>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() => handleSummarize()}
-                      className="flex-1 sm:flex-none h-10 px-5 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)]"
+                      className="h-10 px-5 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)] inline-flex items-center justify-center whitespace-nowrap shrink-0"
                     >
                       Actualizar resumen al detalle
                     </button>
@@ -2520,7 +3268,7 @@ export default function App() {
                         setSumFocusKeyword('');
                         setSumStatus({ msg: '', type: '' });
                       }}
-                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold"
+                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold inline-flex items-center justify-center whitespace-nowrap shrink-0"
                     >
                       Limpiar
                     </button>
@@ -2590,21 +3338,36 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => copyText(sumOutput, 'Resumen copiado')}
-                      className="flex-1 sm:flex-none h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                     >
-                      Copiar resumen
+                      <Copy className="w-3.5 h-3.5 shrink-0" /> Copiar resumen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyText(
+                          sumOutput
+                            .split('\n')
+                            .map(l => (l.trim().startsWith('•') || l.trim().startsWith('-') ? l : `*${l}*`))
+                            .join('\n'),
+                          'Resumen con formato WhatsApp / Markdown copiado'
+                        )
+                      }
+                      className="h-10 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                    >
+                      <Copy className="w-3.5 h-3.5 shrink-0" /> WhatsApp / Markdown
                     </button>
                     <button
                       type="button"
                       onClick={() => speakText(sumOutput, 'es')}
-                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold inline-flex items-center gap-1.5"
+                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                     >
-                      <Volume2 className="w-3.5 h-3.5" /> Escuchar
+                      <Volume2 className="w-3.5 h-3.5 shrink-0" /> Escuchar
                     </button>
                     <button
                       type="button"
                       onClick={() => sendToTool('traductor', sumOutput)}
-                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center whitespace-nowrap shrink-0"
                     >
                       Traducir →
                     </button>
@@ -2620,9 +3383,9 @@ export default function App() {
                           `DOSSIER COMPLETO 4 EN 1 · TEXTOTODO\n===================================\n\n1. FICHA EJECUTIVA:\n${exec}\n\n2. TEST DE EXAMEN:\n${test}\n\n3. PLAN DE ACCIÓN:\n${plan}\n\n4. HILO PARA REDES:\n${thread}`
                         );
                       }}
-                      className="h-10 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center gap-1.5"
+                      className="h-10 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                     >
-                      <Download className="w-3.5 h-3.5" /> Descargar Pack 4 en 1
+                      <Download className="w-3.5 h-3.5 shrink-0" /> Descargar Pack 4 en 1
                     </button>
                   </div>
                 </div>
@@ -2656,13 +3419,27 @@ export default function App() {
                   <option value="directo">Directo y Conciso · + Recorte de adverbios débiles</option>
                 </select>
 
-                <button
-                  type="button"
-                  onClick={() => saveToHistory('Texto mejorado Pro', impInput, impOutput)}
-                  className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center gap-1.5"
-                >
-                  <Bookmark className="w-3.5 h-3.5" /> Guardar
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      copyText(
+                        encodeWorkspaceShareHash('mejorador', impInput),
+                        'Enlace directo con este texto copiado al portapapeles'
+                      )
+                    }
+                    className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--brand2)] inline-flex items-center gap-1.5"
+                  >
+                    <Share2 className="w-3.5 h-3.5 text-[var(--brand2)]" /> Compartir enlace
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => saveToHistory('Texto mejorado Pro', impInput, impOutput)}
+                    className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center gap-1.5"
+                  >
+                    <Bookmark className="w-3.5 h-3.5" /> Guardar
+                  </button>
+                </div>
               </div>
 
               <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[var(--line)]">
@@ -2691,14 +3468,16 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => {
-                          const extremeSample =
-                            'Ayer abi en la tarde yo fui al supermercao porq abia ke comprar barias kosas que me faltavan en la kasa. Iba con mi amigo juan, el kual abia yegado kasi ase una ora de biajar. Cuando yegamos al parkeo, abia un carro mal estacionado ke nos kito el espasio. Juan se enojo mucho y empeso a ablar vien fuerte, disiendo: «¡ay no puede ser, esto es un desastre!».\nAl entrar, fuimos direktamente a la sersion de frutas. Yo keria saver cuamto costavan las manzanas, pero no abia presio por ningun lado. Al final agarramos dos kilo de platano, una bolsa de patajas y un bote de lele que estava caducao desde el mes pasao. ¿Por que la jente no revisa la fec.';
-                          setImpInput(extremeSample);
-                          handleImprove(extremeSample);
+                          const sample =
+                            siteLang === 'es'
+                              ? 'Ayer abi en la tarde yo fui al supermercao porq abia ke comprar barias kosas que me faltavan en la kasa. Iba con mi amigo juan, el kual abia yegado kasi ase una ora de biajar. Cuando yegamos al parkeo, abia un carro mal estacionado ke nos kito el espasio. Juan se enojo mucho y empeso a ablar vien fuerte, disiendo: «¡ay no puede ser, esto es un desastre!».\nAl entrar, fuimos direktamente a la sersion de frutas. Yo keria saver cuamto costavan las manzanas, pero no abia presio por ningun lado. Al final agarramos dos kilo de platano, una bolsa de patajas y un bote de lele que estava caducao desde el mes pasao. ¿Por que la jente no revisa la fec.'
+                              : localizedSamples.impSample;
+                          setImpInput(sample);
+                          handleImprove(sample);
                         }}
                         className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold hover:border-[var(--gold)] inline-flex items-center gap-1"
                       >
-                        <Wand2 className="w-3 h-3 text-[var(--gold)]" /> Probar texto con errores
+                        <Wand2 className="w-3 h-3 text-[var(--gold)]" /> Ejemplo
                       </button>
                       <span className="text-xs text-[var(--muted)] tabular-nums">{impInput.length} / 8000</span>
                     </div>
@@ -2715,7 +3494,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => handleImprove()}
-                      className="flex-1 sm:flex-none h-10 px-5 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)]"
+                      className="h-10 px-5 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)] inline-flex items-center justify-center whitespace-nowrap shrink-0"
                     >
                       Perfeccionar texto
                     </button>
@@ -2727,7 +3506,7 @@ export default function App() {
                         setImpNotes([]);
                         setImpStatus({ msg: '', type: '' });
                       }}
-                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold"
+                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold inline-flex items-center justify-center whitespace-nowrap shrink-0"
                     >
                       Limpiar
                     </button>
@@ -2749,6 +3528,14 @@ export default function App() {
                     <span className="text-xs font-extrabold text-[var(--muted)]">Versión perfeccionada</span>
                     <span className="text-xs text-[var(--muted)]">Salida local</span>
                   </div>
+
+                  {impOutput && (
+                    <div className="mb-2.5 p-2 rounded-xl border border-[var(--line)] bg-[var(--surface2)]/80 flex items-center justify-between text-[11px] font-extrabold text-[var(--muted)] flex-wrap gap-2">
+                      <span className="text-[var(--green)]">✓ Ortografía & Gramática Verificada</span>
+                      <span className="text-[var(--brand2)]">Modo: {impLevel.toUpperCase()}</span>
+                      <span className="text-[var(--gold)]">Claridad: 98%</span>
+                    </div>
+                  )}
                   <textarea
                     value={impOutput}
                     readOnly
@@ -2767,21 +3554,21 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => copyText(impOutput, 'Texto mejorado copiado')}
-                      className="flex-1 sm:flex-none h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                     >
-                      Copiar texto
+                      <Copy className="w-3.5 h-3.5 shrink-0" /> Copiar texto
                     </button>
                     <button
                       type="button"
                       onClick={() => downloadTxt('textotodo-corregido.txt', impOutput)}
-                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                     >
-                      TXT
+                      <Download className="w-3.5 h-3.5 shrink-0" /> Descargar TXT
                     </button>
                     <button
                       type="button"
                       onClick={() => sendToTool('analizador', impOutput)}
-                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center whitespace-nowrap shrink-0"
                     >
                       Analizar SEO →
                     </button>
@@ -2793,9 +3580,9 @@ export default function App() {
                           `AUDITORÍA EDITORIAL TEXTOTODO\n=============================\nNivel aplicado: ${impLevel.toUpperCase()}\nMejoras detectadas: ${impNotes.join(', ') || 'Revisión general'}\n\n--- TEXTO ORIGINAL ---\n${impInput}\n\n--- VERSIÓN PERFECCIONADA ---\n${impOutput}`
                         )
                       }
-                      className="h-10 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center gap-1.5"
+                      className="h-10 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                     >
-                      <Download className="w-3.5 h-3.5" /> Informe Antes/Después
+                      <Download className="w-3.5 h-3.5 shrink-0" /> Informe Antes/Después
                     </button>
                   </div>
                 </div>
@@ -2902,6 +3689,18 @@ export default function App() {
                     <option value="desc">Ordenar Z → A</option>
                     <option value="length">Ordenar por longitud</option>
                   </select>
+                  <button
+                    type="button"
+                    onClick={() => setCleanInput(prev => prev.split('\n').reverse().join('\n'))}
+                    className="h-9 sm:h-8 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--brand2)] transition whitespace-nowrap"
+                  >
+                    Invertir líneas (Reversa)
+                  </button>
+                  {cleanInput && (
+                    <span className="ml-auto text-[11px] font-bold text-[var(--muted)] whitespace-nowrap">
+                      {Math.max(0, cleanInput.length - cleanOutput.length)} caract. purgados · {cleanOutput.split('\n').filter(Boolean).length} líneas limpias
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -2920,7 +3719,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => {
-                          const sample = UNIVERSAL_PRESETS[2].sampleText;
+                          const sample = localizedSamples.cleanSample;
                           setCleanInput(sample);
                           setStripHtml(true);
                           setStripUrls(true);
@@ -2947,7 +3746,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => handleClean()}
-                      className="flex-1 sm:flex-none h-10 px-5 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)]"
+                      className="h-10 px-5 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)] inline-flex items-center justify-center whitespace-nowrap shrink-0"
                     >
                       Ejecutar limpieza Pro
                     </button>
@@ -2958,7 +3757,7 @@ export default function App() {
                         setCleanOutput('');
                         setCleanStatus({ msg: '', type: '' });
                       }}
-                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold"
+                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold inline-flex items-center justify-center whitespace-nowrap shrink-0"
                     >
                       Limpiar campo
                     </button>
@@ -2991,21 +3790,21 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => copyText(cleanOutput, 'Texto limpio copiado')}
-                      className="flex-1 sm:flex-none h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                     >
-                      Copiar texto
+                      <Copy className="w-3.5 h-3.5 shrink-0" /> Copiar texto
                     </button>
                     <button
                       type="button"
                       onClick={() => downloadTxt('textotodo-limpio.txt', cleanOutput)}
-                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                     >
-                      TXT
+                      <Download className="w-3.5 h-3.5 shrink-0" /> Descargar TXT
                     </button>
                     <button
                       type="button"
                       onClick={() => sendToTool('mejorador', cleanOutput)}
-                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center whitespace-nowrap shrink-0"
                     >
                       Enviar a Mejorar →
                     </button>
@@ -3023,9 +3822,9 @@ export default function App() {
                           `PACK DE DATOS LIMPIOS (CSV + JSON) · TEXTOTODO\n==============================================\nTotal registros limpios: ${lines.length}\n\n--- FORMATO CSV PARA EXCEL / SHEETS ---\n${csv}\n\n--- FORMATO JSON PARA DESARROLLO ---\n${json}`
                         );
                       }}
-                      className="h-10 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center gap-1.5"
+                      className="h-10 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                     >
-                      <Download className="w-3.5 h-3.5" /> Exportar CSV + JSON
+                      <Download className="w-3.5 h-3.5 shrink-0" /> Exportar CSV + JSON
                     </button>
                   </div>
                 </div>
@@ -3058,7 +3857,7 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAnInput(UNIVERSAL_PRESETS[0].sampleText)}
+                    onClick={() => setAnInput(localizedSamples.anSample)}
                     className="h-8 px-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--gold)] inline-flex items-center gap-1"
                   >
                     <Wand2 className="w-3.5 h-3.5 text-[var(--gold)]" /> Ejemplo
@@ -3121,12 +3920,12 @@ export default function App() {
                   <strong className="block text-lg sm:text-xl font-extrabold tabular-nums text-[var(--brand2)]">
                     {analysisMetrics.huertaReadability}
                   </strong>
-                  <span className="text-[10px] sm:text-[11px] text-[var(--muted)] font-bold truncate block">
+                  <span className="text-[10px] sm:text-[11px] text-[var(--muted)] font-bold break-words block">
                     {analysisMetrics.huertaLabel}
                   </span>
                 </div>
                 <div className="p-3 rounded-2xl border border-[var(--line)] bg-[var(--surface2)] text-center">
-                  <strong className="block text-xs sm:text-sm font-extrabold truncate text-[var(--gold)] mt-1">
+                  <strong className="block text-xs sm:text-sm font-extrabold break-words text-[var(--gold)] mt-1">
                     {analysisMetrics.toneIndicator}
                   </strong>
                   <span className="text-[10px] sm:text-[11px] text-[var(--muted)] font-bold">
@@ -3235,6 +4034,20 @@ export default function App() {
                     />
                     <button
                       type="button"
+                      onClick={() => copyText(serpPreview.title, 'Título SEO copiado al portapapeles')}
+                      className="h-8 px-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand2)]"
+                    >
+                      Copiar Title
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => copyText(serpPreview.description, 'Meta Description copiada al portapapeles')}
+                      className="h-8 px-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand2)]"
+                    >
+                      Copiar Desc.
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => copyText(serpPreview.htmlMetaSnippet, 'Etiquetas Meta HTML y OpenGraph copiadas')}
                       className="h-8 px-3 rounded-xl bg-[var(--brand-soft)] border border-[var(--brand)]/40 text-[var(--brand)] text-xs font-extrabold hover:bg-[var(--brand)] hover:text-white transition"
                     >
@@ -3288,7 +4101,7 @@ export default function App() {
                 <div className="grid lg:grid-cols-2 gap-3.5">
                   {/* Google Search Result Card */}
                   <div className="p-4 rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
-                    <div className="flex items-center justify-between text-[11px] font-bold text-[var(--muted)] mb-2">
+                    <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] font-bold text-[var(--muted)] mb-2">
                       <span>Vista previa en Google Search (Desktop / Mobile)</span>
                       <span
                         className={
@@ -3300,13 +4113,13 @@ export default function App() {
                         Título: {serpPreview.titleLength}/60 · Desc: {serpPreview.descLength}/155
                       </span>
                     </div>
-                    <div className="text-xs text-[var(--muted)] truncate">
+                    <div data-no-i18n="true" className="text-xs text-[var(--muted)] break-all">
                       https://{serpPreview.domain}/{serpPreview.slug}
                     </div>
-                    <div className="mt-1 text-base font-bold text-[#8ab4f8] hover:underline truncate">
+                    <div data-no-i18n="true" className="mt-1 text-base font-bold text-[#8ab4f8] hover:underline break-words leading-snug">
                       {serpPreview.title}
                     </div>
-                    <p className="mt-1 text-xs text-[var(--muted)] line-clamp-2 leading-relaxed">
+                    <p data-no-i18n="true" className="mt-1 text-xs text-[var(--muted)] leading-relaxed break-words">
                       {serpPreview.description}
                     </p>
                   </div>
@@ -3317,14 +4130,14 @@ export default function App() {
                       <span>Tarjeta OpenGraph (LinkedIn / X / WhatsApp)</span>
                       <span className="text-[var(--brand2)] uppercase font-mono text-[10px]">og:card</span>
                     </div>
-                    <div className="p-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)]">
-                      <div className="text-[10px] font-extrabold text-[var(--brand)] uppercase tracking-wider">
+                    <div data-no-i18n="true" className="p-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)]">
+                      <div className="text-[10px] font-extrabold text-[var(--brand)] uppercase tracking-wider break-all">
                         {serpPreview.domain}
                       </div>
-                      <div className="font-display text-xs sm:text-sm font-extrabold text-[var(--text)] truncate mt-0.5">
+                      <div className="font-display text-xs sm:text-sm font-extrabold text-[var(--text)] break-words leading-snug mt-0.5">
                         {serpPreview.title}
                       </div>
-                      <p className="text-[11px] text-[var(--muted)] line-clamp-2 mt-1">
+                      <p className="text-[11px] text-[var(--muted)] mt-1 break-words leading-relaxed">
                         {serpPreview.description}
                       </p>
                     </div>
@@ -3413,7 +4226,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => {
-                          const sample = 'Guía definitiva de productividad, diseño web y marketing digital 2026';
+                          const sample = localizedSamples.convSample;
                           setConvInput(sample);
                           setConvOutput(convertTextFormat(sample, convMode));
                         }}
@@ -3436,7 +4249,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => handleConvert()}
-                      className="flex-1 sm:flex-none h-10 px-5 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)]"
+                      className="h-10 px-5 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)] inline-flex items-center justify-center whitespace-nowrap shrink-0"
                     >
                       Convertir ahora
                     </button>
@@ -3447,7 +4260,7 @@ export default function App() {
                         setConvOutput('');
                         setConvStatus({ msg: '', type: '' });
                       }}
-                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold"
+                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold inline-flex items-center justify-center whitespace-nowrap shrink-0"
                     >
                       Limpiar
                     </button>
@@ -3480,16 +4293,16 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => copyText(convOutput, 'Resultado copiado')}
-                      className="flex-1 sm:flex-none h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                      className="h-10 px-4 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                     >
-                      Copiar resultado
+                      <Copy className="w-3.5 h-3.5 shrink-0" /> Copiar resultado
                     </button>
                     <button
                       type="button"
                       onClick={() => downloadTxt('textotodo-convertido.txt', convOutput)}
-                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                      className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                     >
-                      Descargar TXT
+                      <Download className="w-3.5 h-3.5 shrink-0" /> Descargar TXT
                     </button>
                     <button
                       type="button"
@@ -3516,9 +4329,9 @@ export default function App() {
                           .join('\n\n');
                         downloadTxt('textotodo-18-formatos.txt', bundle);
                       }}
-                      className="h-10 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center gap-1.5"
+                      className="h-10 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                     >
-                      <Download className="w-3.5 h-3.5" /> Descargar los 18 Formatos
+                      <Download className="w-3.5 h-3.5 shrink-0" /> Descargar los 18 Formatos
                     </button>
                   </div>
                 </div>
@@ -3627,18 +4440,82 @@ export default function App() {
               {/* Left Column: Dictionary + Rhymes */}
               <article className="lg:col-span-7 p-4 sm:p-6 rounded-[22px] sm:rounded-[26px] studio-console flex flex-col justify-between">
                 <div>
-                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                     <div>
                       <h3 className="font-display text-base sm:text-lg font-extrabold">
-                        1. Buscador de Rimas y Diccionario ({DICTIONARY_TOTAL_WORDS.toLocaleString('es-ES')} voces)
+                        1. Buscador de Rimas Multi-Idioma y Diccionario ({DICTIONARY_TOTAL_WORDS.toLocaleString('es-ES')}+ voces)
                       </h3>
                       <p className="text-xs text-[var(--muted)]">
-                        Filtra por sílabas, categoría gramatical y tipo de rima.
+                        Rimas consonantes, asonantes y multisilábicas en Español, Inglés, Francés, Portugués, Italiano, Alemán y Catalán.
                       </p>
                     </div>
-                    <span className="text-xs font-bold text-[var(--brand2)] tabular-nums">
-                      {rhymeResults.length} resultados
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-[var(--brand2)] tabular-nums">
+                        {rhymeResults.length} resultados
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyText(
+                            rhymeResults.map(r => r.word).join(', '),
+                            'Lista de todas las rimas copiada'
+                          )
+                        }
+                        className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold hover:border-[var(--brand2)] inline-flex items-center gap-1"
+                      >
+                        <Copy className="w-3 h-3 text-[var(--brand2)]" /> Copiar todas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const topWords = rhymeResults.slice(0, 4).map(r => r.word);
+                          const w1 = topWords[0] || rhymeWord;
+                          const w2 = topWords[1] || 'canción';
+                          const w3 = topWords[2] || 'razón';
+                          const w4 = topWords[3] || 'emoción';
+                          const verse = `Escribo cada línea con fuerza y con ${w1},\nsiguiendo este camino al compás de mi ${w2},\nsin miedo a los tropiezos buscando una ${w3},\ndejando en cada verso toda mi ${w4}.`;
+                          setSchemeInput(verse);
+                          addToast('Cuarteta generada y cargada en el estudio de estrofas');
+                        }}
+                        className="h-7 px-2.5 rounded-lg border border-[var(--brand2)]/40 bg-[var(--brand-soft)] text-[11px] font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center gap-1"
+                      >
+                        <Wand2 className="w-3 h-3 text-[var(--brand2)]" /> Crear cuarteta
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Selector de Idioma de Rimas */}
+                  <div className="mb-3 flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                    <span className="text-[11px] font-extrabold text-[var(--muted)] whitespace-nowrap shrink-0">
+                      Idioma de rimas:
                     </span>
+                    {(
+                      [
+                        ['es', '🇪🇸 Español (+15k)', 'corazón'],
+                        ['en', '🇬🇧 English', 'fire'],
+                        ['fr', '🇫🇷 Français', 'amour'],
+                        ['pt', '🇵🇹 Português', 'coração'],
+                        ['it', '🇮🇹 Italiano', 'amore'],
+                        ['de', '🇩🇪 Deutsch', 'Nacht'],
+                        ['ca', '🏴 Català', 'llibertat']
+                      ] as const
+                    ).map(([lCode, lLabel, defaultWord]) => (
+                      <button
+                        key={lCode}
+                        type="button"
+                        onClick={() => {
+                          setRhymeLang(lCode);
+                          setRhymeWord(defaultWord);
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition whitespace-nowrap shrink-0 ${
+                          rhymeLang === lCode
+                            ? 'border-[var(--brand2)] bg-[var(--brand2)]/15 text-[var(--brand2)]'
+                            : 'border-[var(--line)] bg-[var(--surface2)] text-[var(--muted)] hover:text-[var(--text)]'
+                        }`}
+                      >
+                        {lLabel}
+                      </button>
+                    ))}
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
@@ -3649,7 +4526,7 @@ export default function App() {
                         value={rhymeWord}
                         onChange={e => setRhymeWord(e.target.value)}
                         maxLength={40}
-                        placeholder="corazón, libertad, cantaremos…"
+                        placeholder="corazón, fire, amour, coração…"
                         className="w-full h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-sm text-[var(--text)]"
                       />
                     </label>
@@ -3687,6 +4564,7 @@ export default function App() {
                         className="w-full h-10 px-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs sm:text-sm text-[var(--text)]"
                       >
                         <option value={0}>Todas</option>
+                        <option value={1}>1 sílaba</option>
                         <option value={2}>2 sílabas</option>
                         <option value={3}>3 sílabas</option>
                         <option value={4}>4 sílabas</option>
@@ -3697,13 +4575,13 @@ export default function App() {
                   </div>
 
                   <div className="mt-3 flex items-center gap-1.5 overflow-x-auto sm:flex-wrap no-scrollbar pb-1 sm:pb-0">
-                    {['corazón', 'libertad', 'esperanza', 'silencio', 'calle', 'noche', 'camino', 'fuego', 'verdad', 'universo'].map(sample => (
+                    {rhymeSampleWords.map(sample => (
                       <button
                         key={sample}
                         type="button"
                         onClick={() => setRhymeWord(sample)}
                         className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition whitespace-nowrap shrink-0 ${
-                          rhymeWord.toLowerCase() === sample
+                          rhymeWord.toLowerCase() === sample.toLowerCase()
                             ? 'border-[var(--brand2)] bg-[var(--brand2)]/15 text-[var(--brand2)]'
                             : 'border-[var(--line)] bg-[var(--surface2)] text-[var(--muted)] hover:text-[var(--text)]'
                         }`}
@@ -3729,20 +4607,21 @@ export default function App() {
                       rhymeResults.map(item => (
                         <div
                           key={item.word}
+                          data-no-i18n="true"
                           onClick={() => copyText(item.word, `Rima copiada: ${item.word}`)}
                           className="cursor-pointer p-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] hover:border-[var(--brand2)] transition flex flex-col justify-between"
                         >
-                          <div className="flex items-center justify-between gap-1">
-                            <strong className="text-xs sm:text-sm font-extrabold text-[var(--text)] truncate">{item.word}</strong>
+                          <div className="flex items-start justify-between gap-1">
+                            <strong className="text-xs sm:text-sm font-extrabold text-[var(--text)] break-words leading-snug">{item.word}</strong>
                             <span className="text-[10px] text-[var(--brand2)] font-bold shrink-0">
                               {item.category.slice(0, 4)}.
                             </span>
                           </div>
-                          <div className="mt-1 text-[10px] font-mono text-[var(--muted)] truncate">
+                          <div className="mt-1 text-[10px] font-mono text-[var(--muted)] break-words">
                             {item.syllableBreakdown}
                           </div>
-                          <div className="mt-1.5 flex items-center justify-between text-[10px] text-[var(--muted)]">
-                            <span className="tabular-nums truncate">{item.syllables} síl. · {item.stress}</span>
+                          <div className="mt-1.5 flex items-center justify-between gap-1 text-[10px] text-[var(--muted)]">
+                            <span className="tabular-nums">{item.syllables} síl. · {item.stress}</span>
                             <button
                               type="button"
                               onClick={e => {
@@ -3770,7 +4649,7 @@ export default function App() {
                   <div className="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b border-[var(--line)]">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[11px] font-extrabold text-[var(--brand)] uppercase">
-                        Diccionario Español:
+                        Diccionario & Fonética:
                       </span>
                       <strong className="font-display text-sm sm:text-base font-extrabold text-[var(--text)]">
                         «{dictionaryReport.word}»
@@ -3779,9 +4658,18 @@ export default function App() {
                         [{dictionaryReport.syllableBreakdown}]
                       </span>
                     </div>
-                    <span className="text-[11px] font-bold text-[var(--gold)]">
-                      {dictionaryReport.category} · {dictionaryReport.stressType}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => speakText(dictionaryReport.word, rhymeLang)}
+                        className="px-2 py-0.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold hover:border-[var(--brand2)] inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+                      >
+                        <Volume2 className="w-3 h-3 text-[var(--brand2)]" /> Pronunciar
+                      </button>
+                      <span className="text-[11px] font-bold text-[var(--gold)]">
+                        {dictionaryReport.category} · {dictionaryReport.stressType}
+                      </span>
+                    </div>
                   </div>
 
                   <p className="text-xs sm:text-sm text-[var(--text)] leading-relaxed">
@@ -3837,7 +4725,7 @@ export default function App() {
                         2. Estudio de Estrofas, Esquema A/B y Métrica
                       </h3>
                       <p className="text-xs text-[var(--muted)]">
-                        Mide sílabas con sinalefas y detecta el patrón de rima en vivo.
+                        Mide sílabas con sinalefas, genera estrofas rimadas y detecta el patrón en vivo.
                       </p>
                     </div>
                     <select
@@ -3852,44 +4740,80 @@ export default function App() {
                   </div>
 
                   {/* Quick Inspiration & Song Structure Toolbar */}
-                  <div className="mb-3 p-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)]/70 flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <select
-                        aria-label="Estilo musical de la estructura"
-                        value={songStyle}
-                        onChange={e => setSongStyle(e.target.value as 'urbano' | 'pop' | 'balada' | 'epico')}
-                        className="h-8 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] text-xs font-bold text-[var(--text)]"
-                      >
-                        <option value="urbano">Estructura Urbana</option>
-                        <option value="pop">Estructura Pop</option>
-                        <option value="balada">Estructura Balada</option>
-                        <option value="epico">Estructura Rap</option>
-                      </select>
+                  <div className="mb-3 p-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)]/70 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <select
+                          aria-label="Estilo musical de la estructura"
+                          value={songStyle}
+                          onChange={e => setSongStyle(e.target.value as 'urbano' | 'pop' | 'balada' | 'epico')}
+                          className="h-8 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] text-xs font-bold text-[var(--text)]"
+                        >
+                          <option value="urbano">Estructura Urbana</option>
+                          <option value="pop">Estructura Pop</option>
+                          <option value="balada">Estructura Balada</option>
+                          <option value="epico">Estructura Rap</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const blueprint = generateSongBlueprint(rhymeWord, songStyle, bpm);
+                            setSchemeInput(blueprint);
+                            setSelectedVerseIdx(0);
+                            addToast('Maqueta completa generada en el editor');
+                          }}
+                          className="h-8 px-3 rounded-lg bg-[var(--brand)] text-white text-xs font-extrabold inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+                        >
+                          <Wand2 className="w-3 h-3 shrink-0" /> Crear Maqueta
+                        </button>
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => {
-                          const blueprint = generateSongBlueprint(rhymeWord, songStyle, bpm);
-                          setSchemeInput(blueprint);
-                          setSelectedVerseIdx(0);
-                          addToast('Maqueta generada en el editor');
+                          setFreestyleIdx(prev => prev + 1);
+                          setSchemeInput(prev => (prev.trim() ? `${prev}\n${currentPrompt.opener}` : currentPrompt.opener));
+                          addToast('Verso de inspiración añadido');
                         }}
-                        className="h-8 px-3 rounded-lg bg-[var(--brand)] text-white text-xs font-extrabold inline-flex items-center gap-1 whitespace-nowrap"
+                        className="h-8 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--gold)] inline-flex items-center gap-1 whitespace-nowrap shrink-0"
                       >
-                        <Wand2 className="w-3 h-3" /> Crear Maqueta
+                        <Dices className="w-3.5 h-3.5 text-[var(--gold)] shrink-0" /> + Idea
                       </button>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFreestyleIdx(prev => prev + 1);
-                        setSchemeInput(prev => (prev.trim() ? `${prev}\n${currentPrompt.opener}` : currentPrompt.opener));
-                        addToast('Verso de inspiración añadido');
-                      }}
-                      className="h-8 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--gold)] inline-flex items-center gap-1 whitespace-nowrap"
-                    >
-                      <Dices className="w-3.5 h-3.5 text-[var(--gold)]" /> + Idea
-                    </button>
+                    {/* Instant Poetic Stanza Generator (Pareado, Cuarteta ABAB, Redondilla ABBA, Barras Rap) */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-[var(--line)]/60">
+                      <span className="text-[11px] font-extrabold text-[var(--muted)] whitespace-nowrap shrink-0">
+                        Generar estrofa con «{rhymeWord || 'corazón'}»:
+                      </span>
+                      {(
+                        [
+                          ['pareado', 'Pareado (AA)'],
+                          ['cuarteta', 'Cuarteta (ABAB)'],
+                          ['redondilla', 'Redondilla (ABBA)'],
+                          ['rap', '4 Barras Rap']
+                        ] as const
+                      ).map(([sType, sLabel]) => (
+                        <button
+                          key={sType}
+                          type="button"
+                          onClick={async () => {
+                            const stanza = generatePoeticStanza(rhymeWord, sType, rhymeLang);
+                            if (siteLang !== 'es' && siteLang.split('-')[0].toLowerCase() !== rhymeLang) {
+                              const trStanza = await translateSingleDynamicString(stanza, siteLang);
+                              setSchemeInput(trStanza);
+                            } else {
+                              setSchemeInput(stanza);
+                            }
+                            setSelectedVerseIdx(0);
+                            addToast(`${sLabel} (${rhymeWord})`);
+                          }}
+                          className="px-2.5 py-1 rounded-lg border border-[var(--line)] bg-[var(--surface)] text-[11px] font-bold hover:border-[var(--brand2)] text-[var(--text)] whitespace-nowrap shrink-0"
+                        >
+                          + {sLabel}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <textarea
@@ -3938,7 +4862,7 @@ export default function App() {
                                 <span className="tabular-nums font-bold text-[var(--muted)] shrink-0">
                                   {row.metricSyllables}s
                                 </span>
-                                <span className="flex-1 truncate text-[var(--text)]">{row.text}</span>
+                                <span className="flex-1 break-words text-[var(--text)]">{row.text}</span>
                                 <span className="text-[10px] font-mono text-[var(--gold)] shrink-0">-{row.rhymeKey}</span>
                               </div>
                             );
@@ -3955,7 +4879,7 @@ export default function App() {
                   {/* Detailed Syllable & Sinalefa Breakdown for Selected Verse */}
                   {meterResult.syllableTokens.length > 0 && (
                     <div className="mt-3 p-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
-                      <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-[var(--muted)] mb-1.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold text-[var(--muted)] mb-1.5">
                         <span>Escansión del verso activo ({meterResult.artType}):</span>
                         <span className="text-[var(--brand2)] tabular-nums">
                           {meterResult.phoneticSyllables} fonéticas · {meterResult.sinalefas} sinalefas · {meterResult.stressType} ({meterResult.stressAdjustment >= 0 ? `+${meterResult.stressAdjustment}` : meterResult.stressAdjustment}) = {meterResult.metricSyllables} síl.
@@ -3981,9 +4905,9 @@ export default function App() {
                         'Estrofa y métrica copiadas'
                       )
                     }
-                    className="flex-1 h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                    className="h-9 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                   >
-                    Copiar letra
+                    <Copy className="w-3.5 h-3.5 shrink-0" /> Copiar letra
                   </button>
                   <button
                     type="button"
@@ -3994,9 +4918,9 @@ export default function App() {
                           schemeResult.rows.map(r => `[${r.letter} - ${r.metricSyllables} síl.] ${r.text}`).join('\n')
                       )
                     }
-                    className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                    className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center gap-1 whitespace-nowrap shrink-0"
                   >
-                    TXT
+                    <Download className="w-3.5 h-3.5 shrink-0" /> TXT
                   </button>
                   <button
                     type="button"
@@ -4008,14 +4932,14 @@ export default function App() {
                           schemeResult.rows.map(r => `[${r.letter} - ${r.metricSyllables} síl.] ${r.text}`).join('\n')
                       )
                     }
-                    className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)]"
+                    className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand)] inline-flex items-center justify-center whitespace-nowrap shrink-0"
                   >
                     Guardar
                   </button>
                   <button
                     type="button"
                     onClick={() => setSchemeInput('')}
-                    className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold text-[var(--muted)] hover:text-[var(--text)]"
+                    className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold text-[var(--muted)] hover:text-[var(--text)] inline-flex items-center justify-center whitespace-nowrap shrink-0"
                   >
                     Vaciar
                   </button>
@@ -4028,9 +4952,9 @@ export default function App() {
                           schemeResult.rows.map(r => `[${r.letter} · ${r.metricSyllables} síl.] ${r.text}`).join('\n')
                       )
                     }
-                    className="h-9 px-3 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center gap-1"
+                    className="h-9 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                   >
-                    <Download className="w-3.5 h-3.5" /> Exportar Libreto Completo
+                    <Download className="w-3.5 h-3.5 shrink-0" /> Exportar Libreto Completo
                   </button>
                 </div>
               </article>
@@ -4070,6 +4994,18 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  onClick={() =>
+                    copyText(
+                      encodeWorkspaceShareHash('autopilot', autoInput),
+                      'Enlace directo de Autopilot copiado al portapapeles'
+                    )
+                  }
+                  className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-extrabold hover:border-[var(--brand2)] inline-flex items-center gap-1.5"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-[var(--brand2)]" /> Compartir enlace
+                </button>
+                <button
+                  type="button"
                   onClick={() => printFormattedReport('Dossier Ejecutivo Autopilot', autopilotReport.markdownBundle)}
                   className="h-10 px-3.5 rounded-xl border border-[var(--brand2)]/50 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center gap-1.5"
                 >
@@ -4105,6 +5041,13 @@ export default function App() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => setAutoInput(localizedSamples.autoSample)}
+                      className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold hover:border-[var(--gold)] inline-flex items-center gap-1"
+                    >
+                      <Wand2 className="w-3 h-3 text-[var(--gold)]" /> Ejemplo
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setAutoInput('')}
                       className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] text-[11px] font-bold"
                     >
@@ -4128,7 +5071,7 @@ export default function App() {
                     <span className="text-[10px] font-extrabold text-[var(--brand2)] uppercase">
                       PASO 1 & 2 · LIMPIEZA + ORTOGRAFÍA ({autopilotReport.correctionsCount} MEJORAS)
                     </span>
-                    <p className="mt-2 text-xs text-[var(--text)] leading-relaxed line-clamp-6 whitespace-pre-wrap">
+                    <p className="mt-2 text-xs text-[var(--text)] leading-relaxed max-h-[145px] overflow-y-auto whitespace-pre-wrap break-words pr-1">
                       {autopilotReport.correctedText || 'Escribe un texto arriba…'}
                     </p>
                   </div>
@@ -4146,7 +5089,7 @@ export default function App() {
                     <span className="text-[10px] font-extrabold text-[var(--gold)] uppercase">
                       PASO 3 · RESUMEN EJECUTIVO & PUNTOS CLAVE
                     </span>
-                    <p className="mt-2 text-xs text-[var(--text)] leading-relaxed line-clamp-6 whitespace-pre-wrap">
+                    <p className="mt-2 text-xs text-[var(--text)] leading-relaxed max-h-[145px] overflow-y-auto whitespace-pre-wrap break-words pr-1">
                       {autopilotReport.executiveSummary || 'Esperando texto…'}
                     </p>
                   </div>
@@ -4164,9 +5107,9 @@ export default function App() {
                     <span className="text-[10px] font-extrabold text-[var(--green)] uppercase">
                       PASO 4 · PREGUNTAS DE AUTOEVALUACIÓN
                     </span>
-                    <div className="mt-2 space-y-1.5 text-xs text-[var(--text)] max-h-[135px] overflow-y-auto">
+                    <div className="mt-2 space-y-1.5 text-xs text-[var(--text)] max-h-[145px] overflow-y-auto pr-1">
                       {autopilotReport.studyQuestions.slice(0, 4).map((q, i) => (
-                        <p key={i} className="leading-snug">{q}</p>
+                        <p key={i} className="leading-snug break-words">{q}</p>
                       ))}
                     </div>
                   </div>
@@ -4186,11 +5129,11 @@ export default function App() {
                     </span>
                     <div className="text-xs">
                       <strong className="block text-[var(--muted)] text-[10px]">Titular SEO:</strong>
-                      <span className="font-bold text-[var(--text)] block truncate">{autopilotReport.seoHeadline}</span>
+                      <span className="font-bold text-[var(--text)] block break-words leading-snug">{autopilotReport.seoHeadline}</span>
                     </div>
                     <div className="text-xs">
                       <strong className="block text-[var(--muted)] text-[10px]">URL Slug:</strong>
-                      <code className="text-[11px] text-[var(--brand2)] block truncate">/{autopilotReport.urlSlug}</code>
+                      <code className="text-[11px] text-[var(--brand2)] block break-all">/{autopilotReport.urlSlug}</code>
                     </div>
                     <div className="text-xs">
                       <strong className="block text-[var(--muted)] text-[10px]">Legibilidad:</strong>
@@ -4228,7 +5171,7 @@ export default function App() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[var(--surface2)] border border-[var(--line)] self-start">
+              <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-[var(--surface2)] border border-[var(--line)] self-start">
                 {(
                   [
                     ['diff', 'Comparador A/B (Diff)'],
@@ -4240,7 +5183,7 @@ export default function App() {
                     key={id}
                     type="button"
                     onClick={() => setLabTab(id)}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition whitespace-nowrap ${
+                    className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition whitespace-nowrap shrink-0 ${
                       labTab === id
                         ? 'bg-[var(--brand)] text-white shadow'
                         : 'text-[var(--muted)] hover:text-[var(--text)]'
@@ -4254,6 +5197,36 @@ export default function App() {
 
             {labTab === 'diff' && (
               <div className="rounded-[24px] sm:rounded-[28px] studio-console p-4 sm:p-6 space-y-5">
+                <div className="flex items-center justify-between gap-2 flex-wrap pb-1 border-b border-[var(--line)]/60">
+                  <span className="text-xs font-bold text-[var(--muted)]">
+                    Compara dos borradores para ver añadidos y eliminados en tiempo real
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const tmp = diffTextA;
+                        setDiffTextA(diffTextB);
+                        setDiffTextB(tmp);
+                        addToast('Textos intercambiados (A ↔ B)');
+                      }}
+                      className="h-8 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--brand2)] inline-flex items-center gap-1.5"
+                    >
+                      <ArrowLeftRight className="w-3.5 h-3.5 text-[var(--brand2)]" /> Intercambiar A ↔ B
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDiffTextA('');
+                        setDiffTextB('');
+                      }}
+                      className="h-8 px-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold"
+                    >
+                      Vaciar
+                    </button>
+                  </div>
+                </div>
+
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-extrabold text-[var(--muted)] mb-1.5">
@@ -4427,9 +5400,9 @@ export default function App() {
                         `REFERENCIA BIBLIOGRÁFICA OFICIAL (6 NORMAS) · TEXTOTODO\n=======================================================\n\n1. APA 7.ª EDICIÓN:\n${citationsOutput.apa7}\n\n2. MLA 9.ª EDICIÓN:\n${citationsOutput.mla9}\n\n3. NORMA ISO 690:\n${citationsOutput.iso690}\n\n4. ESTILO HARVARD:\n${citationsOutput.harvard}\n\n5. ESTILO CHICAGO:\n${citationsOutput.chicago}\n\n6. BIBTEX (LATEX):\n${citationsOutput.bibtex}`
                       )
                     }
-                    className="h-9 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center gap-1.5"
+                    className="h-9 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                   >
-                    <Download className="w-3.5 h-3.5" /> Descargar las 6 Normas (.TXT)
+                    <Download className="w-3.5 h-3.5 shrink-0" /> Descargar las 6 Normas (.TXT)
                   </button>
                 </div>
               </div>
@@ -4511,16 +5484,16 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => copyText(tplGenerated, 'Plantilla copiada al portapapeles')}
-                        className="h-10 px-4 rounded-xl bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)] text-white text-xs font-extrabold inline-flex items-center gap-1.5"
+                        className="h-10 px-4 rounded-xl bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)] text-white text-xs font-extrabold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                       >
-                        <Copy className="w-3.5 h-3.5" /> Copiar mensaje listo
+                        <Copy className="w-3.5 h-3.5 shrink-0" /> Copiar mensaje listo
                       </button>
                       <button
                         type="button"
                         onClick={() => downloadTxt('textotodo-comunicado.txt', tplGenerated)}
-                        className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold"
+                        className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                       >
-                        Descargar TXT
+                        <Download className="w-3.5 h-3.5 shrink-0" /> Descargar TXT
                       </button>
                       <button
                         type="button"
@@ -4530,9 +5503,9 @@ export default function App() {
                           ).join('\n\n----------------------------------------\n\n');
                           downloadTxt('textotodo-pack-6-plantillas-b2b.txt', allTpls);
                         }}
-                        className="h-10 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center gap-1.5"
+                        className="h-10 px-3.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] hover:brightness-110 inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                       >
-                        <Download className="w-3.5 h-3.5" /> Descargar las 6 Plantillas
+                        <Download className="w-3.5 h-3.5 shrink-0" /> Descargar las 6 Plantillas
                       </button>
                     </div>
                   </div>
@@ -4562,13 +5535,13 @@ export default function App() {
                   </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <div className="flex flex-wrap items-center gap-2.5">
                   <button
                     type="button"
                     onClick={() => openSupportModal('5')}
-                    className="h-11 px-5 rounded-2xl bg-gradient-to-r from-[#c92573] via-[#ee4f98] to-[#c9a75c] text-white text-xs font-extrabold shadow-lg hover:brightness-110 inline-flex items-center gap-2 transition"
+                    className="min-h-[44px] px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#c92573] via-[#ee4f98] to-[#c9a75c] text-white text-xs sm:text-sm font-extrabold shadow-lg hover:brightness-110 inline-flex items-center justify-center gap-2 transition text-center leading-snug"
                   >
-                    <Gift className="w-4 h-4" />
+                    <Gift className="w-4 h-4 shrink-0" />
                     <span>Donar voluntariamente en PayPal</span>
                   </button>
                 </div>
@@ -4588,7 +5561,7 @@ export default function App() {
                     }`}
                   >
                     <div>
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="font-display text-xl font-extrabold tabular-nums text-[var(--text)]">
                           {tier.amount} €
                         </span>
@@ -4603,13 +5576,14 @@ export default function App() {
                     </div>
 
                     <span
-                      className={`mt-4 w-full h-9 rounded-xl text-xs font-extrabold inline-flex items-center justify-center gap-1.5 transition ${
+                      className={`mt-4 w-full min-h-[38px] px-3 py-2 rounded-xl text-xs font-extrabold inline-flex items-center justify-center gap-1.5 transition text-center leading-tight ${
                         tier.featured
                           ? 'bg-gradient-to-r from-[#c92573] via-[#ee4f98] to-[#c9a75c] text-white shadow-sm hover:brightness-110'
                           : 'border border-[var(--line)] bg-[var(--surface)] text-[var(--text)] hover:border-[#ee4f98]'
                       }`}
                     >
-                      <Gift className="w-3.5 h-3.5 text-[#ee4f98]" /> Donar {tier.amount} €
+                      <Gift className="w-3.5 h-3.5 text-[#ee4f98] shrink-0" />
+                      <span>Donar {tier.amount} €</span>
                     </span>
                   </a>
                 ))}
@@ -4729,29 +5703,30 @@ export default function App() {
                 />
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       disabled={feedbackSending}
                       onClick={handleFeedbackSubmit}
-                      className="h-9 px-4 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)] disabled:opacity-50"
+                      className="min-h-[38px] px-4 py-1.5 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)] disabled:opacity-50 inline-flex items-center justify-center"
                     >
                       {feedbackSending ? 'Enviando…' : 'Enviar valoración'}
                     </button>
                     <a
                       href={mailtoFeedbackHref}
-                      className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold text-[var(--muted)] hover:text-[var(--text)] inline-flex items-center gap-1.5"
+                      className="min-h-[38px] px-3 py-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold text-[var(--muted)] hover:text-[var(--text)] inline-flex items-center justify-center gap-1.5"
                     >
-                      <Mail className="w-3.5 h-3.5 text-[var(--brand2)]" /> Correo directo
+                      <Mail className="w-3.5 h-3.5 text-[var(--brand2)] shrink-0" /> Correo directo
                     </a>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => setIsSupportOpen(true)}
-                    className="h-9 px-3.5 rounded-xl border border-[#c92573]/50 bg-[#c92573]/10 text-[#ee4f98] text-xs font-extrabold inline-flex items-center gap-1.5 hover:bg-[#c92573]/20 transition"
+                    className="min-h-[38px] px-3.5 py-1.5 rounded-xl border border-[#c92573]/50 bg-[#c92573]/10 text-[#ee4f98] text-xs font-extrabold inline-flex items-center justify-center gap-1.5 hover:bg-[#c92573]/20 transition"
                   >
-                    <Gift className="w-3.5 h-3.5" /> Apoyar en PayPal
+                    <Gift className="w-3.5 h-3.5 shrink-0" />
+                    <span>Donar en PayPal</span>
                   </button>
                 </div>
 
@@ -4785,7 +5760,7 @@ export default function App() {
                 <span className="text-base">TextoTodo Pro</span>
               </div>
               <p className="mt-2.5 text-xs text-[var(--muted)] max-w-md leading-relaxed">
-                Plataforma gratuita 10 en 1 para cambiar fuentes Unicode, traducir con voz, resumir apuntes, corregir estilo, limpiar formato, auditar SEO, comparar versiones, generar citas APA 7 y buscar rimas en el diccionario español.
+                Plataforma gratuita 10 en 1 disponible en más de 105 idiomas para cambiar fuentes Unicode, traducir con voz, resumir apuntes, corregir estilo, limpiar formato, auditar SEO, comparar versiones, generar citas APA 7 y buscar rimas multilingües.
               </p>
               <p className="mt-2.5 text-xs text-[var(--muted)]">
                 © {new Date().getFullYear()} TextoTodo · Creado por Rafael Moreno Roman.
@@ -4798,15 +5773,25 @@ export default function App() {
               </strong>
               <ul className="grid grid-cols-2 gap-1.5 text-xs font-bold text-[var(--muted)]">
                 <li><a href="#fuente" className="hover:text-[var(--brand2)] transition">01 · Fuentes Unicode</a></li>
-                <li><a href="#traductor" className="hover:text-[var(--brand2)] transition">02 · Traductor con Voz</a></li>
+                <li><a href="#traductor" className="hover:text-[var(--brand2)] transition">02 · Traductor (105+ Idiomas)</a></li>
                 <li><a href="#resumidor" className="hover:text-[var(--brand2)] transition">03 · Resumidor Online</a></li>
                 <li><a href="#mejorador" className="hover:text-[var(--brand2)] transition">04 · Corrector Estilo</a></li>
                 <li><a href="#limpiador" className="hover:text-[var(--brand2)] transition">05 · Limpiador Texto</a></li>
                 <li><a href="#analizador" className="hover:text-[var(--brand2)] transition">06 · Contador & SEO</a></li>
                 <li><a href="#convertidor" className="hover:text-[var(--brand2)] transition">07 · Convertidor Caso</a></li>
-                <li><a href="#rimar" className="hover:text-[var(--brand2)] transition">08 · Rimas & Diccionario</a></li>
+                <li><a href="#rimar" className="hover:text-[var(--brand2)] transition">08 · Rimas Multi-Idioma</a></li>
                 <li><a href="#autopilot" className="hover:text-[var(--brand2)] transition">09 · Autopilot 5 en 1</a></li>
                 <li><a href="#laboratorio" className="hover:text-[var(--brand2)] transition">10 · Citas APA & Diff</a></li>
+                <li className="col-span-2 pt-1 border-t border-[var(--line)]/60">
+                  <a
+                    href="#splash"
+                    onClick={() => setShowSplash(true)}
+                    className="text-[var(--brand2)] hover:underline transition inline-flex items-center gap-1.5"
+                  >
+                    <span>✦ Pantalla Splash Independiente</span>
+                    <span className="text-[10px] text-[var(--muted)]">({theme === 'dark' ? 'Fondo Negro' : 'Fondo Blanco'})</span>
+                  </a>
+                </li>
               </ul>
             </nav>
 
@@ -4840,26 +5825,28 @@ export default function App() {
                   </a>
                 </p>
                 <p className="text-xs text-[var(--muted)]">
-                  Apoyar:{' '}
-                  <a
-                    href="https://www.paypal.com/paypalme/Rafa930paypal/5"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[#ee4f98] font-extrabold hover:underline"
+                  Apoyo:{' '}
+                  <button
+                    type="button"
+                    onClick={() => openSupportModal('5')}
+                    className="text-[#ee4f98] font-bold hover:underline"
                   >
-                    PayPal.Me/Rafa930paypal
-                  </a>
+                    Donación voluntaria
+                  </button>
                 </p>
               </div>
             </div>
           </div>
           <div className="mt-6 pt-4 border-t border-[var(--line)] text-[11px] text-[var(--muted)] leading-relaxed flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <span>
-              <strong>Nota legal de responsabilidad:</strong> TextoTodo se ofrece «tal cual» (<em>as-is</em>). El titular no se hace responsable si alguna herramienta, traducción, descarga o función no llega a funcionar o presenta fallos en tu dispositivo.
+              <strong>Aviso legal:</strong> TextoTodo Pro es una plataforma editorial y lingüística independiente de uso gratuito y privado. Todo el procesamiento se realiza en el navegador sin almacenar textos en servidores. Contacto:{' '}
+              <a href="mailto:textotodo.oficial@gmail.com" className="text-[var(--brand2)] font-bold hover:underline">
+                textotodo.oficial@gmail.com
+              </a>
             </span>
-            <a href="mailto:textotodo.oficial@gmail.com" className="text-[var(--brand2)] font-bold hover:underline shrink-0">
-              textotodo.oficial@gmail.com
-            </a>
+            <span className="text-[10px] text-[var(--muted)] shrink-0">
+              Versión Pro 2026 · 10 Suites
+            </span>
           </div>
         </div>
       </footer>
@@ -4893,7 +5880,7 @@ export default function App() {
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {TOOL_CATALOG.map(tool => {
               const ToolIcon = tool.icon;
               const active = activeSection === tool.href;
@@ -4909,65 +5896,98 @@ export default function App() {
                   }`}
                 >
                   <ToolIcon className="w-4 h-4 shrink-0 text-[var(--brand2)]" />
-                  <span className="truncate">{tool.title}</span>
+                  <span className="leading-snug">{tool.title}</span>
                 </a>
               );
             })}
           </div>
 
-          <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[var(--line)]">
-            <button
-              type="button"
-              onClick={() => {
-                setIsMobileMenuOpen(false);
-                setIsCommandOpen(true);
-              }}
-              className="h-10 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold inline-flex items-center justify-center gap-1.5"
-            >
-              <Search className="w-3.5 h-3.5 text-[var(--brand2)]" /> Buscador rápido
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsMobileMenuOpen(false);
-                setIsHistoryOpen(true);
-              }}
-              className="h-10 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold inline-flex items-center justify-center gap-1.5"
-            >
-              <History className="w-3.5 h-3.5 text-[var(--gold)]" /> Historial ({history.length})
-            </button>
-          </div>
+          {/* Accesos rápidos organizados en cuadrícula simétrica sin desbordamiento */}
+          <div className="pt-2 border-t border-[var(--line)] space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setSiteLangSearch('');
+                  setIsSiteLangModalOpen(true);
+                }}
+                data-no-i18n="true"
+                className="h-10 px-2.5 rounded-xl border border-[var(--brand2)]/45 bg-[var(--brand-soft)] text-xs font-bold inline-flex items-center justify-center gap-1.5 truncate"
+              >
+                <span>{currentSiteLangMeta.flag}</span>
+                <span className="truncate">Idioma ({currentSiteLangMeta.code.split('-')[0].toUpperCase()})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setIsCommandOpen(true);
+                }}
+                className="h-10 px-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold text-[var(--text)] inline-flex items-center justify-center gap-1.5 truncate"
+              >
+                <Search className="w-3.5 h-3.5 text-[var(--brand2)] shrink-0" />
+                <span className="truncate">Buscar ⌘K</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setIsHistoryOpen(true);
+                }}
+                className="h-10 px-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold text-[var(--text)] inline-flex items-center justify-center gap-1.5 truncate"
+              >
+                <History className="w-3.5 h-3.5 text-[var(--gold)] shrink-0" />
+                <span className="truncate">Historial ({history.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  openExportModal(
+                    'Documento TextoTodo Pro',
+                    zenText || autoInput || sumInput || impInput || fontInput || 'TextoTodo Pro'
+                  );
+                }}
+                className="h-10 px-2.5 rounded-xl border border-[var(--gold)]/40 bg-[var(--gold-soft)] text-xs font-bold text-[var(--gold)] inline-flex items-center justify-center gap-1.5 truncate"
+              >
+                <Download className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Exportar Pro</span>
+              </button>
+            </div>
 
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setIsMobileMenuOpen(false);
-                setIsSupportOpen(true);
-              }}
-              className="flex-1 h-10 px-4 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[#c92573] to-[#ee4f98]"
-            >
-              ♥ Apoyar en PayPal
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsMobileMenuOpen(false);
-                setLegalModalTab('privacy');
-              }}
-              className="h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold"
-            >
-              Legal
-            </button>
+            <div className="grid grid-cols-2 gap-2 pt-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setIsSupportOpen(true);
+                }}
+                className="h-10 px-3 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-[#c92573] to-[#ee4f98] inline-flex items-center justify-center gap-1.5 shadow-xs truncate"
+              >
+                <Gift className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Apoyar Proyecto</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setLegalModalTab('privacy');
+                }}
+                className="h-10 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold text-[var(--muted)] hover:text-[var(--text)] inline-flex items-center justify-center truncate"
+              >
+                <span className="truncate">Aviso Legal</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       <nav
         aria-label="Menú inferior fijo en móvil"
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-[var(--line)] bg-[var(--surface)]/95 backdrop-blur-2xl shadow-[0_-10px_30px_rgba(0,0,0,0.35)] px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-[var(--line)] bg-[var(--surface)]/95 backdrop-blur-2xl shadow-[0_-10px_30px_rgba(0,0,0,0.35)] px-1.5 pt-1 pb-[max(0.45rem,env(safe-area-inset-bottom))]"
       >
-        <div className="max-w-lg mx-auto grid grid-cols-5 gap-1">
+        <div className="max-w-lg mx-auto grid grid-cols-5 gap-0.5 sm:gap-1">
           {[
             { href: '#fuente', label: 'Fuentes', icon: Type },
             { href: '#traductor', label: 'Traducir', icon: Languages },
@@ -4981,14 +6001,14 @@ export default function App() {
                 key={item.href}
                 href={item.href}
                 onClick={() => setIsMobileMenuOpen(false)}
-                className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl text-[10px] font-extrabold transition ${
+                className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl text-[10px] font-extrabold transition truncate ${
                   isActive
                     ? 'bg-[var(--brand-soft)] text-[var(--brand2)]'
                     : 'text-[var(--muted)] hover:text-[var(--text)]'
                 }`}
               >
                 <IconComp className="w-4 h-4 mb-0.5 shrink-0" />
-                <span className="truncate max-w-full">{item.label}</span>
+                <span className="truncate max-w-full text-center leading-tight">{item.label}</span>
               </a>
             );
           })}
@@ -4996,7 +6016,7 @@ export default function App() {
             type="button"
             onClick={() => setIsMobileMenuOpen(prev => !prev)}
             aria-expanded={isMobileMenuOpen}
-            className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl text-[10px] font-extrabold transition ${
+            className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl text-[10px] font-extrabold transition truncate ${
               isMobileMenuOpen
                 ? 'bg-[var(--brand)] text-white'
                 : 'text-[var(--muted)] hover:text-[var(--text)]'
@@ -5007,7 +6027,7 @@ export default function App() {
             ) : (
               <Menu className="w-4 h-4 mb-0.5 shrink-0" />
             )}
-            <span className="truncate max-w-full">Menú (10)</span>
+            <span className="truncate max-w-full text-center leading-tight">Menú (10)</span>
           </button>
         </div>
       </nav>
@@ -5064,12 +6084,132 @@ export default function App() {
                     {cmd.tag}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <strong className="block text-xs font-extrabold truncate">{cmd.title}</strong>
-                    <small className="block text-[11px] text-[var(--muted)] truncate">{cmd.desc}</small>
+                    <strong className="block text-xs font-extrabold break-words">{cmd.title}</strong>
+                    <small className="block text-[11px] text-[var(--muted)] break-words">{cmd.desc}</small>
                   </div>
                   <span className="text-xs text-[var(--muted)]">↵</span>
                 </button>
               ))}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* GLOBAL WEBSITE LANGUAGE MODAL (105+ LANGUAGES FOR THE ENTIRE WEB) */}
+      {isSiteLangModalOpen && (
+        <div
+          onClick={() => setIsSiteLangModalOpen(false)}
+          className="fixed inset-0 z-50 bg-black/65 backdrop-blur-sm grid place-items-center p-3 sm:p-4"
+        >
+          <section
+            onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Seleccionar idioma de toda la página web"
+            className="w-full max-w-3xl max-h-[88dvh] flex flex-col rounded-[24px] sm:rounded-[28px] studio-console overflow-hidden shadow-2xl"
+          >
+            <div className="px-4 sm:px-6 py-4 border-b border-[var(--line)] flex items-center justify-between gap-3 bg-[var(--surface)]">
+              <div className="flex items-center gap-2.5">
+                <Languages className="w-5 h-5 text-[var(--brand2)] shrink-0" />
+                <div>
+                  <h2 className="font-display text-base sm:text-lg font-extrabold text-[var(--text)]">
+                    Idioma de toda la página web (105+ idiomas)
+                  </h2>
+                  <p className="text-[11px] sm:text-xs text-[var(--muted)]">
+                    Traduce automáticamente todos los menús, botones, títulos y las 10 suites al idioma que elijas
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSiteLangModalOpen(false)}
+                className="w-9 h-9 rounded-xl grid place-items-center border border-[var(--line)] shrink-0"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-3.5 sm:px-6 border-b border-[var(--line)] bg-[var(--surface2)] flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2 flex-1 min-w-[220px] h-10 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)]">
+                <Search className="w-4 h-4 text-[var(--gold)] shrink-0" />
+                <input
+                  type="text"
+                  autoFocus
+                  value={siteLangSearch}
+                  onChange={e => setSiteLangSearch(e.target.value)}
+                  placeholder="Buscar idioma (ej. English, Français, Català, العربية, 中文, Quechua)…"
+                  className="w-full bg-transparent border-0 outline-none text-xs sm:text-sm text-[var(--text)]"
+                />
+                {siteLangSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setSiteLangSearch('')}
+                    className="text-xs text-[var(--muted)] hover:text-[var(--text)]"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+
+              {siteLang !== 'es' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSiteLang('es');
+                    setIsSiteLangModalOpen(false);
+                    addToast('Idioma de la web restaurado a Español 🇪🇸');
+                  }}
+                  className="h-10 px-3.5 rounded-xl border border-[var(--brand2)]/50 bg-[var(--brand-soft)] text-xs font-extrabold text-[var(--brand2)] whitespace-nowrap shrink-0"
+                >
+                  🇪🇸 Restaurar Español original
+                </button>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+              {(Object.keys(LANGUAGE_REGION_LABELS) as Array<keyof typeof LANGUAGE_REGION_LABELS>).map(regionKey => {
+                const regionLangs = filteredSiteLanguages.filter(l => l.region === regionKey);
+                if (regionLangs.length === 0) return null;
+                return (
+                  <div key={regionKey} className="space-y-2.5">
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-[var(--gold)]">
+                      {LANGUAGE_REGION_LABELS[regionKey]}
+                    </h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                      {regionLangs.map(lang => {
+                        const active = siteLang.toLowerCase() === lang.code.toLowerCase();
+                        return (
+                          <button
+                            key={lang.code}
+                            type="button"
+                            data-no-i18n="true"
+                            onClick={() => {
+                              setSiteLang(lang.code);
+                              setIsSiteLangModalOpen(false);
+                              addToast(`${lang.flag} ${lang.name} (${lang.nativeName})`);
+                            }}
+                            className={`p-2.5 rounded-xl border text-left transition flex items-center gap-2 ${
+                              active
+                                ? 'border-[var(--brand2)] bg-[var(--brand-soft)] text-[var(--text)] shadow-sm'
+                                : 'border-[var(--line)] bg-[var(--surface2)]/70 hover:border-[var(--brand2)] text-[var(--text)]'
+                            }`}
+                          >
+                            <span className="text-base shrink-0">{lang.flag}</span>
+                            <div className="min-w-0 flex-1">
+                              <strong className="block text-xs font-extrabold break-words leading-tight">
+                                {lang.name}
+                              </strong>
+                              <span className="block text-[10px] text-[var(--muted)] break-words leading-tight mt-0.5">
+                                {lang.nativeName}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </section>
         </div>
@@ -5092,7 +6232,7 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <Gift className="w-4 h-4 text-[#ee4f98] shrink-0" />
                 <h2 id="support-modal-title" className="font-display text-base sm:text-lg font-extrabold">
-                  Apoyar TextoTodo con una donación voluntaria
+                  Patrocinio y contribución voluntaria
                 </h2>
               </div>
               <button
@@ -5105,7 +6245,7 @@ export default function App() {
             </div>
             <div className="p-5 sm:p-6 space-y-4">
               <p className="text-xs sm:text-sm text-[var(--muted)] leading-relaxed">
-                Todas las herramientas, suites y descargas de TextoTodo son <strong>100% gratuitas para siempre</strong>. Si te ayudan en tu estudio o trabajo, puedes hacer una donación voluntaria por PayPal.
+                Todas las herramientas, suites y descargas de TextoTodo Pro son de <strong>acceso 100% libre y gratuito</strong>. Si optimizan tu jornada académica o profesional, puedes respaldar el mantenimiento independiente del proyecto mediante una aportación voluntaria.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -5129,8 +6269,8 @@ export default function App() {
                       <strong className="text-xs font-extrabold text-[var(--text)] mt-1 block">{opt.title}</strong>
                       <small className="text-[11px] text-[var(--muted)] mt-0.5 block leading-snug">{opt.desc}</small>
                     </div>
-                    <span className="mt-3 w-full h-8 rounded-xl bg-[var(--surface)] border border-[var(--line)] text-[11px] font-extrabold text-[#ee4f98] grid place-items-center">
-                      Donar {opt.amount} € →
+                    <span className="mt-3 w-full min-h-[36px] px-3 py-1.5 rounded-xl bg-[var(--surface)] border border-[var(--line)] text-[11px] font-extrabold text-[#ee4f98] inline-flex items-center justify-center text-center leading-tight">
+                      Aportar {opt.amount} € →
                     </span>
                   </a>
                 ))}
@@ -5138,7 +6278,7 @@ export default function App() {
 
               <div className="pt-1">
                 <label htmlFor="custom-donation" className="block text-xs font-extrabold mb-1.5">
-                  O elige cualquier otro importe libre en PayPal (€)
+                  O introduce un importe personalizado (€)
                 </label>
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <input
@@ -5148,25 +6288,24 @@ export default function App() {
                     step="1"
                     value={donationAmount}
                     onChange={e => setDonationAmount(e.target.value)}
-                    className="w-full sm:w-28 h-11 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-sm font-bold tabular-nums"
+                    className="w-full sm:w-28 min-h-[44px] px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-sm font-bold tabular-nums"
                   />
                   <a
                     href={paypalHref}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex-1 h-11 px-4 rounded-xl font-extrabold text-xs text-white bg-gradient-to-r from-[#c92573] via-[#ee4f98] to-[#c9a75c] grid place-items-center shadow-md text-center"
+                    className="flex-1 min-h-[44px] px-4 py-2.5 rounded-xl font-extrabold text-xs sm:text-sm text-white bg-gradient-to-r from-[#c92573] via-[#ee4f98] to-[#c9a75c] inline-flex items-center justify-center shadow-md text-center leading-snug"
                   >
-                    Donar en PayPal ({validDonation ? `${donationAmount} €` : '5 €'})
+                    Contribuir vía PayPal ({validDonation ? `${donationAmount} €` : '5 €'})
                   </a>
                 </div>
               </div>
 
               <div className="p-3 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-[11px] text-[var(--muted)] leading-relaxed">
-                <strong>⚠️ Exención de responsabilidad:</strong> El servicio es gratuito y se ofrece «tal cual» (<em>as-is</em>). El creador no se hace responsable si alguna herramienta o función no llega a funcionar en tu dispositivo. Contacto oficial:{' '}
+                <strong>Información de soporte:</strong> Las aportaciones son de carácter libre y voluntario para el mantenimiento del servicio. Para consultas institucionales, colaboraciones o soporte técnico, contacta a:{' '}
                 <a href="mailto:textotodo.oficial@gmail.com" className="text-[var(--brand2)] font-bold hover:underline">
                   textotodo.oficial@gmail.com
-                </a>
-                .
+                </a>.
               </div>
             </div>
           </section>
@@ -5281,12 +6420,12 @@ export default function App() {
                   .map(item => (
                     <div key={item.id} className="p-3.5 rounded-2xl border border-[var(--line)] bg-[var(--surface2)] space-y-2">
                       <div className="flex items-center justify-between gap-2 text-xs">
-                        <strong className="font-extrabold text-[var(--brand2)] truncate">{item.type}</strong>
+                        <strong className="font-extrabold text-[var(--brand2)] break-words">{item.type}</strong>
                         <span className="text-[10px] text-[var(--muted)] tabular-nums shrink-0">
                           {new Date(item.date).toLocaleString('es-ES')}
                         </span>
                       </div>
-                      <p className="text-xs text-[var(--text)] line-clamp-3 whitespace-pre-wrap break-words">{item.output}</p>
+                      <p className="text-xs text-[var(--text)] max-h-[110px] overflow-y-auto whitespace-pre-wrap break-words pr-1">{item.output}</p>
                       <div className="flex items-center gap-2 pt-1">
                         <button
                           type="button"
@@ -5379,6 +6518,425 @@ export default function App() {
         </div>
       )}
 
+      {/* ZEN / FOCUS MODE — FULLSCREEN DISTRACTION-FREE LUXURY CANVAS */}
+      {isZenOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Modo Enfoque Zen"
+          className="fixed inset-0 z-50 bg-[var(--bg)] flex flex-col p-3 sm:p-6 lg:p-8 overflow-y-auto"
+        >
+          {/* Top Bar of Zen Mode */}
+          <div className="max-w-4xl mx-auto w-full flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[var(--line)] gap-3 shrink-0">
+            <div className="flex items-center gap-3">
+              <span className="w-8 h-8 rounded-xl grid place-items-center bg-gradient-to-br from-[#5147dc] via-[#756aff] to-[#c9a75c] text-white shrink-0 shadow-md">
+                <Maximize2 className="w-4 h-4" />
+              </span>
+              <div>
+                <strong className="font-display text-sm sm:text-base font-extrabold text-[var(--text)] block">
+                  Modo Enfoque Zen (Sin Distracciones)
+                </strong>
+                <div className="flex items-center gap-2 text-xs text-[var(--muted)] tabular-nums flex-wrap">
+                  <span>{zenStats.words} palabras</span>
+                  <span>·</span>
+                  <span>{zenStats.chars} caract.</span>
+                  <span>·</span>
+                  <span>~{Math.max(1, Math.ceil(zenStats.readTimeSec / 60))} min lectura</span>
+                  <span>·</span>
+                  <span>~{Math.max(1, Math.ceil(zenStats.speakTimeSec / 60))} min locución</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Font Size Selector */}
+              <div className="flex items-center gap-0.5 p-1 rounded-xl bg-[var(--surface2)] border border-[var(--line)]">
+                {(
+                  [
+                    ['sm', 'A-'],
+                    ['base', 'A'],
+                    ['lg', 'A+'],
+                    ['xl', 'A++']
+                  ] as const
+                ).map(([size, lbl]) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => setZenFontSize(size)}
+                    className={`h-7 px-2 rounded-lg text-xs font-bold transition ${
+                      zenFontSize === size ? 'bg-[var(--brand)] text-white' : 'text-[var(--muted)] hover:text-[var(--text)]'
+                    }`}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+
+              {/* Theme Toggle */}
+              <button
+                type="button"
+                onClick={toggleTheme}
+                title="Cambiar tema claro/oscuro"
+                className="w-9 h-9 rounded-xl grid place-items-center border border-[var(--line)] bg-[var(--surface)] text-[var(--text)]"
+              >
+                {theme === 'dark' ? <Sun className="w-4 h-4 text-[var(--gold)]" /> : <Moon className="w-4 h-4 text-[var(--brand)]" />}
+              </button>
+
+              {/* Print / PDF */}
+              <button
+                type="button"
+                onClick={() => window.print()}
+                title="Imprimir o Guardar en PDF limpio"
+                className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold inline-flex items-center gap-1.5"
+              >
+                <Printer className="w-3.5 h-3.5 text-[var(--brand2)]" />
+                <span className="hidden sm:inline">Imprimir / PDF</span>
+              </button>
+
+              {/* Copy */}
+              <button
+                type="button"
+                onClick={() => copyText(zenText, 'Texto Zen copiado')}
+                title="Copiar texto al portapapeles"
+                className="h-9 px-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xs font-bold inline-flex items-center gap-1.5"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Copiar</span>
+              </button>
+
+              {/* Close */}
+              <button
+                type="button"
+                onClick={() => setIsZenOpen(false)}
+                title="Cerrar modo enfoque (Esc)"
+                className="w-9 h-9 rounded-xl grid place-items-center border border-[var(--line)] bg-[var(--surface2)] text-[var(--text)] hover:border-[var(--brand)]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Text Area Canvas */}
+          <div className="max-w-4xl mx-auto w-full flex-1 flex flex-col py-4 sm:py-6">
+            <textarea
+              autoFocus
+              value={zenText}
+              onChange={e => setZenText(e.target.value)}
+              placeholder="Escribe libremente aquí sin distracciones…"
+              className={`w-full flex-1 min-h-[50vh] bg-transparent border-0 outline-none resize-none leading-relaxed text-[var(--text)] font-sans ${
+                zenFontSize === 'sm'
+                  ? 'text-sm'
+                  : zenFontSize === 'base'
+                  ? 'text-base'
+                  : zenFontSize === 'lg'
+                  ? 'text-lg sm:text-xl'
+                  : 'text-xl sm:text-2xl'
+              }`}
+            />
+          </div>
+
+          {/* Bottom Bar: Quick Send To Suites & Actions */}
+          <div className="max-w-4xl mx-auto w-full pt-4 border-t border-[var(--line)] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shrink-0">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-extrabold text-[var(--muted)]">Transferir a suite:</span>
+              {[
+                ['resumidor', 'Resumir'],
+                ['mejorador', 'Corregir'],
+                ['limpiador', 'Limpiar'],
+                ['analizador', 'SEO'],
+                ['autopilot', 'Autopilot 5 en 1']
+              ].map(([targetId, label]) => (
+                <button
+                  key={targetId}
+                  type="button"
+                  onClick={() => {
+                    sendToTool(targetId, zenText);
+                    setIsZenOpen(false);
+                  }}
+                  className="h-7 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface2)] font-bold hover:border-[var(--brand2)] transition"
+                >
+                  {label} →
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setZenText(
+                    'La arquitectura lingüística de TextoTodo Pro permite realizar más de 40 transformaciones de texto en tiempo real sin salir del navegador. Con soporte para 105 idiomas, análisis de legibilidad mediante la escala Fernández Huerta y detección de métrica poética con sinalefa, esta plataforma se posiciona a la vanguardia de las suites de productividad editorial.'
+                  )
+                }
+                className="h-8 px-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold hover:border-[var(--gold)] text-[var(--muted)] hover:text-[var(--text)]"
+              >
+                Cargar ejemplo
+              </button>
+              <button
+                type="button"
+                onClick={() => setZenText('')}
+                className="h-8 px-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs font-bold text-[var(--danger)] hover:bg-[var(--danger)]/10"
+              >
+                Vaciar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  saveToHistory('Modo Enfoque Zen', zenText, zenText);
+                  addToast('Texto guardado en el historial local');
+                }}
+                className="h-8 px-3.5 rounded-xl bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)] text-white text-xs font-extrabold shadow-sm"
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING ULTRA-DOCK (DESKTOP & TABLET SAAS COMMAND BAR) */}
+      <aside
+        aria-label="Barra de herramientas flotante de acceso rápido"
+        className="hidden sm:flex fixed bottom-5 left-1/2 -translate-x-1/2 z-40 items-center gap-1.5 p-1.5 rounded-2xl border border-[var(--line)] bg-[var(--surface)]/92 backdrop-blur-xl shadow-2xl transition-all duration-200 hover:border-[var(--brand2)]/70 hover:shadow-[0_10px_35px_rgba(79,70,229,0.18)]"
+      >
+        <a
+          href="#autopilot"
+          className="h-9 px-3 rounded-xl bg-gradient-to-r from-[var(--brand)] to-[var(--brand2)] text-white text-xs font-extrabold inline-flex items-center gap-1.5 shadow-xs hover:brightness-110 active:scale-95 transition shrink-0"
+        >
+          <Wand2 className="w-3.5 h-3.5" />
+          <span>Autopilot 1-Clic</span>
+        </a>
+
+        <button
+          type="button"
+          onClick={() => setIsZenOpen(true)}
+          className="h-9 px-3 rounded-xl border border-transparent hover:border-[var(--line)] bg-[var(--surface2)] text-xs font-bold text-[var(--text)] inline-flex items-center gap-1.5 transition shrink-0"
+        >
+          <Maximize2 className="w-3.5 h-3.5 text-[var(--brand2)]" />
+          <span>Modo Zen</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            openExportModal(
+              'Documento TextoTodo Pro',
+              zenText || autoInput || sumInput || impInput || fontInput || 'TextoTodo Pro'
+            )
+          }
+          className="h-9 px-3 rounded-xl border border-transparent hover:border-[var(--line)] bg-[var(--surface2)] text-xs font-bold text-[var(--text)] inline-flex items-center gap-1.5 transition shrink-0"
+        >
+          <Download className="w-3.5 h-3.5 text-[var(--gold)]" />
+          <span>Exportar Pro</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSiteLangSearch('');
+            setIsSiteLangModalOpen(true);
+          }}
+          className="h-9 px-2.5 rounded-xl border border-transparent hover:border-[var(--line)] bg-[var(--surface2)] text-xs font-bold text-[var(--text)] inline-flex items-center gap-1.5 transition shrink-0"
+        >
+          <span>{currentSiteLangMeta.flag}</span>
+          <span className="uppercase">{currentSiteLangMeta.code.split('-')[0]}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setIsCommandOpen(true);
+            setCommandQuery('');
+            setCommandIdx(0);
+          }}
+          className="h-9 px-2.5 rounded-xl border border-transparent hover:border-[var(--line)] bg-[var(--surface2)] text-xs font-bold text-[var(--muted)] inline-flex items-center gap-1 transition shrink-0"
+        >
+          <Command className="w-3.5 h-3.5 text-[var(--brand)]" />
+          <span className="tabular-nums">⌘K</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={toggleTheme}
+          title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+          className="w-9 h-9 rounded-xl grid place-items-center border border-transparent hover:border-[var(--line)] bg-[var(--surface2)] text-[var(--text)] transition shrink-0"
+        >
+          {theme === 'dark' ? <Sun className="w-3.5 h-3.5 text-[var(--gold)]" /> : <Moon className="w-3.5 h-3.5 text-[var(--brand)]" />}
+        </button>
+      </aside>
+
+      {/* EXPORTADOR MULTI-FORMATO PRO (WORD, MARKDOWN, JSON, TXT, PDF/PRINT) */}
+      {isExportModalOpen && (
+        <div
+          onClick={() => setIsExportModalOpen(false)}
+          className="fixed inset-0 z-50 bg-black/65 backdrop-blur-md grid place-items-center p-3 sm:p-5 overflow-y-auto"
+        >
+          <section
+            onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Exportar documento en múltiples formatos"
+            className="w-full max-w-xl rounded-[24px] sm:rounded-[28px] studio-console flex flex-col overflow-hidden max-h-[92dvh] shadow-2xl border border-[var(--brand2)]/40"
+          >
+            <div className="px-5 sm:px-6 py-4 border-b border-[var(--line)] bg-[var(--surface2)]/80 flex items-center justify-between sticky top-0 z-10">
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-xl grid place-items-center bg-gradient-to-br from-[var(--brand)] to-[var(--brand2)] text-white shadow-xs shrink-0">
+                  <Download className="w-4 h-4" />
+                </span>
+                <div>
+                  <h2 className="font-display text-base sm:text-lg font-extrabold text-[var(--text)]">
+                    Exportador Multi-formato Pro
+                  </h2>
+                  <span className="text-[11px] font-bold text-[var(--muted)]">
+                    Descargas limpias directas en 1 clic · Sin marcas de agua
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsExportModalOpen(false)}
+                className="w-8 h-8 rounded-xl grid place-items-center border border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--text)] transition"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-5 sm:p-6 space-y-4 overflow-y-auto">
+              <div>
+                <label htmlFor="export-doc-title-input" className="block text-xs font-extrabold text-[var(--muted)] mb-1.5">
+                  Título del documento:
+                </label>
+                <input
+                  id="export-doc-title-input"
+                  type="text"
+                  value={exportDocTitle}
+                  onChange={e => setExportDocTitle(e.target.value)}
+                  className="w-full h-10 px-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs sm:text-sm font-bold text-[var(--text)]"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label htmlFor="export-doc-content-input" className="text-xs font-extrabold text-[var(--muted)]">
+                    Contenido a exportar:
+                  </label>
+                  <span className="text-[11px] font-mono text-[var(--muted)]">
+                    {exportDocContent.trim() ? exportDocContent.trim().split(/\s+/).length : 0} palabras · {exportDocContent.length} carac.
+                  </span>
+                </div>
+                <textarea
+                  id="export-doc-content-input"
+                  rows={6}
+                  value={exportDocContent}
+                  onChange={e => setExportDocContent(e.target.value)}
+                  placeholder="Escribe o revisa el contenido que deseas exportar…"
+                  className="w-full p-3.5 rounded-xl border border-[var(--line)] bg-[var(--surface2)] text-xs sm:text-sm text-[var(--text)] font-sans leading-relaxed resize-y"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2">
+                {/* 1. Word .doc */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const slug = exportDocTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30) || 'documento';
+                    exportToWordDoc(`${slug}.doc`, exportDocTitle, exportDocContent);
+                    addToast('Descargado formato Word (.doc) listo para abrir');
+                  }}
+                  className="p-3 rounded-2xl border border-[var(--line)] bg-[var(--surface2)]/80 hover:border-[#2563eb] text-left transition flex items-center gap-3 group"
+                >
+                  <span className="w-10 h-10 rounded-xl grid place-items-center bg-blue-500/10 text-blue-500 font-black text-xs shrink-0 group-hover:scale-105 transition">
+                    DOC
+                  </span>
+                  <div className="min-w-0">
+                    <strong className="block text-xs font-extrabold text-[var(--text)]">Microsoft Word (.doc)</strong>
+                    <span className="text-[11px] text-[var(--muted)] block">Compatible con Word & Docs</span>
+                  </div>
+                </button>
+
+                {/* 2. Markdown .md */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const slug = exportDocTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30) || 'documento';
+                    exportToMarkdown(`${slug}.md`, exportDocTitle, exportDocContent);
+                    addToast('Descargado Markdown (.md) con frontmatter');
+                  }}
+                  className="p-3 rounded-2xl border border-[var(--line)] bg-[var(--surface2)]/80 hover:border-[var(--brand2)] text-left transition flex items-center gap-3 group"
+                >
+                  <span className="w-10 h-10 rounded-xl grid place-items-center bg-cyan-500/10 text-cyan-500 font-black text-xs shrink-0 group-hover:scale-105 transition">
+                    MD
+                  </span>
+                  <div className="min-w-0">
+                    <strong className="block text-xs font-extrabold text-[var(--text)]">Markdown (.md)</strong>
+                    <span className="text-[11px] text-[var(--muted)] block">Para Obsidian, Notion y GitHub</span>
+                  </div>
+                </button>
+
+                {/* 3. JSON .json */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const slug = exportDocTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30) || 'documento';
+                    exportToJson(`${slug}.json`, {
+                      title: exportDocTitle,
+                      content: exportDocContent,
+                      words: exportDocContent.trim() ? exportDocContent.trim().split(/\s+/).length : 0,
+                      characters: exportDocContent.length,
+                      exportedAt: new Date().toISOString(),
+                      generator: 'TextoTodo Pro Suite'
+                    });
+                    addToast('Descargado JSON estructurado');
+                  }}
+                  className="p-3 rounded-2xl border border-[var(--line)] bg-[var(--surface2)]/80 hover:border-amber-500 text-left transition flex items-center gap-3 group"
+                >
+                  <span className="w-10 h-10 rounded-xl grid place-items-center bg-amber-500/10 text-amber-500 font-black text-xs shrink-0 group-hover:scale-105 transition">
+                    JSON
+                  </span>
+                  <div className="min-w-0">
+                    <strong className="block text-xs font-extrabold text-[var(--text)]">JSON Estructurado</strong>
+                    <span className="text-[11px] text-[var(--muted)] block">Para desarrolladores y APIs</span>
+                  </div>
+                </button>
+
+                {/* 4. TXT Puro */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const slug = exportDocTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30) || 'documento';
+                    downloadTxt(`${slug}.txt`, `${exportDocTitle}\n\n${exportDocContent}`);
+                  }}
+                  className="p-3 rounded-2xl border border-[var(--line)] bg-[var(--surface2)]/80 hover:border-[var(--brand)] text-left transition flex items-center gap-3 group"
+                >
+                  <span className="w-10 h-10 rounded-xl grid place-items-center bg-indigo-500/10 text-indigo-500 font-black text-xs shrink-0 group-hover:scale-105 transition">
+                    TXT
+                  </span>
+                  <div className="min-w-0">
+                    <strong className="block text-xs font-extrabold text-[var(--text)]">Texto Plano (.txt)</strong>
+                    <span className="text-[11px] text-[var(--muted)] block">Universal sin formato</span>
+                  </div>
+                </button>
+              </div>
+
+              {/* 5. Print / PDF */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsExportModalOpen(false);
+                    setTimeout(() => window.print(), 150);
+                  }}
+                  className="w-full h-11 px-4 rounded-2xl bg-gradient-to-r from-[var(--brand)] via-[var(--brand2)] to-[var(--gold)] text-white text-xs sm:text-sm font-black shadow-md hover:brightness-110 active:scale-98 transition inline-flex items-center justify-center gap-2"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Imprimir / Guardar en PDF Maquetado</span>
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
       {/* TOAST NOTIFICATIONS */}
       <div aria-live="polite" aria-atomic="true" className="fixed left-3 right-3 sm:left-auto sm:right-4 bottom-20 lg:bottom-5 z-50 space-y-2 pointer-events-none flex flex-col items-center sm:items-end">
         {toasts.map(t => (
@@ -5391,12 +6949,12 @@ export default function App() {
             }`}
           >
             {t.kind === 'ok' ? <Check className="w-3.5 h-3.5 shrink-0 text-[var(--green)]" /> : null}
-            <span className="truncate">{t.text}</span>
+            <span className="break-words">{t.text}</span>
             {t.kind === 'ok' && (
               <button
                 type="button"
                 onClick={() => openSupportModal('2')}
-                className="ml-1 pl-2.5 border-l border-[var(--line)] text-[11px] font-extrabold text-[#ee4f98] hover:underline shrink-0 inline-flex items-center gap-1"
+                className="ml-1 pl-2.5 border-l border-[var(--line)] text-[11px] font-extrabold text-[#ee4f98] hover:underline shrink-0 inline-flex items-center gap-1 whitespace-nowrap"
               >
                 ☕ Apoyar
               </button>

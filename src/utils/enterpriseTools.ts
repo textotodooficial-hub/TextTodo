@@ -269,7 +269,7 @@ export function generateAcademicCitations(input: CitationInput): CitationResult 
   const year = (input.year || String(new Date().getFullYear())).trim();
   const title = (input.title || 'Guía de procesamiento de texto y productividad digital').trim();
   const source = (input.publisherOrSite || 'TextoTodo Pro Editorial').trim();
-  const url = (input.url || 'https://textotodo.pages.dev/').trim();
+  const url = (input.url || 'https://textotodooficial-hub.github.io/TextTodo/').trim();
   const accessed = (input.accessDate || new Date().toLocaleDateString('es-ES')).trim();
 
   const slugKey =
@@ -560,7 +560,7 @@ export function buildSerpPreview(
   customDomain?: string
 ): SerpPreviewData {
   const clean = (rawText || '').trim().replace(/\s+/g, ' ');
-  const domain = (customDomain || 'textotodo.pages.dev').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '') || 'textotodo.pages.dev';
+  const domain = (customDomain || 'textotodooficial-hub.github.io/TextTodo').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '') || 'textotodooficial-hub.github.io/TextTodo';
   const firstSentence = clean.split(/[.!?]/)[0]?.trim() || 'Plataforma Todo en Uno de Productividad y Texto';
   const generatedTitle =
     (customTitle?.trim() || convertTextFormat(firstSentence.slice(0, 62), 'title')) + ' | TextoTodo Pro';
@@ -645,4 +645,97 @@ export function decodeWorkspaceShareHash(hashStr: string): SharedWorkspacePayloa
     return null;
   }
 }
+
+// ============================================================================
+// 9. EXPORTADOR MULTI-FORMATO EMPRESARIAL (WORD .DOC, MARKDOWN, JSON, PDF/PRINT)
+// ============================================================================
+export function exportToWordDoc(filename: string, title: string, textContent: string) {
+  const safeTitle = (title || 'Documento TextoTodo Pro').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeBody = (textContent || '')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n\n/g, '</p><p style="margin-bottom: 12pt; line-height: 1.6;">')
+    .replace(/\n/g, '<br/>');
+
+  const htmlDoc = `
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head>
+        <meta charset='utf-8'>
+        <title>${safeTitle}</title>
+        <!--[if gte mso 9]>
+        <xml>
+          <w:WordDocument>
+            <w:View>Print</w:View>
+            <w:Zoom>100</w:Zoom>
+            <w:DoNotOptimizeForBrowser/>
+          </w:WordDocument>
+        </xml>
+        <![endif]-->
+        <style>
+          body { font-family: 'Calibri', 'Segoe UI', sans-serif; font-size: 11pt; color: #1e293b; margin: 1in; }
+          h1 { font-size: 20pt; color: #4f46e5; border-bottom: 2pt solid #e2e8f0; padding-bottom: 8pt; margin-bottom: 16pt; font-family: 'Segoe UI Semibold', sans-serif; }
+          .meta { font-size: 9pt; color: #64748b; margin-bottom: 20pt; text-transform: uppercase; letter-spacing: 0.05em; }
+          p { margin-bottom: 12pt; line-height: 1.6; text-align: justify; }
+          .footer { margin-top: 32pt; pt: 12pt; border-top: 1pt solid #cbd5e1; font-size: 8.5pt; color: #94a3b8; }
+        </style>
+      </head>
+      <body>
+        <h1>${safeTitle}</h1>
+        <div class="meta">Generado con TextoTodo Pro · Suite Editorial Lingüística · ${new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+        <p style="margin-bottom: 12pt; line-height: 1.6;">${safeBody}</p>
+        <div class="footer">TextoTodo Pro — 10 Suites de Productividad de Texto · 100% Privado en Cliente</div>
+      </body>
+    </html>
+  `.trim();
+
+  const blob = new Blob(['\ufeff', htmlDoc], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.endsWith('.doc') ? filename : `${filename}.doc`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function exportToMarkdown(filename: string, title: string, textContent: string) {
+  const md = `---
+title: "${title.replace(/"/g, '\\"')}"
+date: "${new Date().toISOString()}"
+generator: "TextoTodo Pro Suite"
+---
+
+# ${title}
+
+${textContent}
+
+---
+*Documento exportado con [TextoTodo Pro](https://textotodooficial-hub.github.io/TextTodo) — Plataforma 10 en 1 de Productividad Lingüística.*
+`;
+
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.endsWith('.md') ? filename : `${filename}.md`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function exportToJson(filename: string, data: unknown) {
+  const jsonStr = JSON.stringify(data, null, 2);
+  const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.endsWith('.json') ? filename : `${filename}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 

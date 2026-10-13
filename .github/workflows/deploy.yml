@@ -27,10 +27,10 @@ jobs:
           node-version: 24
 
       - name: Instalar dependencias
-        run: npm install --legacy-peer-deps # 🟢 Añadido para ignorar conflictos estrictos de paquetes
+        run: npm install --legacy-peer-deps
 
       - name: Compilar versión estática (dist)
-        run: npm run build || npx vite build
+        run: npm run build
 
       - name: Crear 404.html y .nojekyll para GitHub Pages
         run: |

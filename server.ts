@@ -144,25 +144,25 @@ async function startServer() {
     });
   });
 
-  // Translation endpoint
+  // Translation endpoint (supports 100+ world languages & dialects)
   app.post('/api/translate', async (req, res) => {
     try {
       const { text, from, to } = req.body || {};
-      const allowedLangs = new Set(['es', 'en', 'fr', 'de', 'pt', 'it']);
+      const langRegex = /^[a-zA-Z]{2,3}(-[a-zA-Z]{2,4})?$/;
 
       if (!text || typeof text !== 'string' || !text.trim()) {
         res.status(400).json({ error: 'Escribe un texto válido para traducir.' });
         return;
       }
-      if (text.length > 2000) {
-        res.status(400).json({ error: 'El texto supera el límite máximo permitido de 2000 caracteres.' });
+      if (text.length > 5000) {
+        res.status(400).json({ error: 'El texto supera el límite máximo permitido de 5000 caracteres.' });
         return;
       }
-      if (!allowedLangs.has(from) || !allowedLangs.has(to)) {
+      if (typeof from !== 'string' || typeof to !== 'string' || !langRegex.test(from) || !langRegex.test(to)) {
         res.status(400).json({ error: 'Par de idiomas no soportado.' });
         return;
       }
-      if (from === to) {
+      if (from.toLowerCase() === to.toLowerCase()) {
         res.status(400).json({ error: 'El idioma de origen y destino deben ser distintos.' });
         return;
       }
